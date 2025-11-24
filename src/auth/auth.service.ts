@@ -1,4 +1,4 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 
 import { AccountsDto } from './dtos/signup.dto';
 import { ROLES } from './models/roles.enum';
@@ -16,12 +16,15 @@ import { ActivityService } from '../activity/activity.service';
 import { Injectable } from '@nestjs/common';
 import { NotImplementedException } from '@nestjs/common';
 import { UnauthorizedException } from '@nestjs/common';
+import { TeachersEntity } from '../profiles/entities/teachers.entity';
 
 @Injectable()
 export class AuthService {
   constructor(
     @InjectRepository(AccountsEntity)
     private accountsRepository: Repository<AccountsEntity>,
+    @InjectRepository(TeachersEntity)
+    private teachersRepository: Repository<TeachersEntity>,
     private jwtService: JwtService,
     private resourceById: ResourceByIdService,
     private activityService: ActivityService,
@@ -130,7 +133,42 @@ export class AuthService {
       case ROLES.admin:
       case ROLES.auditor:
       case ROLES.director: {
-        const tr = await this.resourceById.getTeacherById(id);
+        // Try to get existing teacher, or create one if it doesn't exist (for initial admin setup)
+        let tr: TeachersEntity;
+        try {
+          tr = await this.resourceById.getTeacherById(id);
+        } catch (error) {
+          // If teacher doesn't exist, create a minimal teacher record for admin/director roles
+          // ONLY when the teachers table is empty (first-time bootstrap scenario)
+          const privilegedRole = role === ROLES.admin || role === ROLES.director;
+          if (error instanceof NotFoundException && privilegedRole) {
+            const teacherCount = await this.teachersRepository.count();
+            if (teacherCount === 0) {
+              tr = this.teachersRepository.create({
+                id: id,
+                name: 'Admin',
+                surname: 'User',
+                dob: new Date(),
+                gender: 'Other',
+                title: 'Mr',
+                dateOfJoining: new Date(),
+                qualifications: [],
+                active: true,
+                cell: '',
+                email: '',
+                address: '',
+                dateOfLeaving: null,
+                role: role,
+              });
+              tr = await this.teachersRepository.save(tr);
+            } else {
+              throw error;
+            }
+          } else {
+            // For other roles (teacher, reception, hod, auditor) or when table has data, teacher must exist
+            throw error;
+          }
+        }
 
         try {
           account.teacher = tr;

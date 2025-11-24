@@ -9,6 +9,7 @@ import { AuthService } from './auth.service';
 import { AccountsEntity } from './entities/accounts.entity';
 import { RoleEntity } from './entities/role.entity';
 import { PermissionEntity } from './entities/permission.entity';
+import { TeachersEntity } from '../profiles/entities/teachers.entity';
 import { JwtStrategy } from './jwt.strategy';
 import { ResourceByIdModule } from '../resource-by-id/resource-by-id.module';
 import { ConfigModule, ConfigService } from '@nestjs/config';
@@ -52,7 +53,7 @@ import { JwtAuthGuard } from './guards/jwt-auth.guard';
       inject: [ConfigService], // Tell NestJS to inject ConfigService into useFactory
     }),
     PassportModule.register({ defaultStrategy: 'jwt' }),
-    TypeOrmModule.forFeature([AccountsEntity, RoleEntity, PermissionEntity]),
+    TypeOrmModule.forFeature([AccountsEntity, RoleEntity, PermissionEntity, TeachersEntity]),
     ResourceByIdModule,
     forwardRef(() => ActivityModule), // Use forwardRef to handle circular dependency
   ],
