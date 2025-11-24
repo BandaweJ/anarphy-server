@@ -20,7 +20,10 @@ interface AuthenticatedSocket extends Socket {
 
 @WebSocketGateway({
   cors: {
-    origin: '*', // Configure based on your frontend URL
+    origin: [
+      'http://localhost:4200',
+      'https://anarphy-portal.vercel.app',
+    ],
     credentials: true,
   },
   namespace: '/messaging',

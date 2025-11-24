@@ -30,12 +30,9 @@ async function bootstrap() {
 
   // Define your allowed origins dynamically or explicitly
   const allowedOrigins = [
-    'http://localhost:4200', // Your local development frontend
-    'https://front-mu-five.vercel.app', // Your Vercel deployed frontend URL
-    // If your Vercel frontend generates dynamic preview URLs (e.g., for branches),
-    // you might need a more flexible approach using a regex.
-    // Example for dynamic Vercel URLs:
-    // /https:\/\/front-mu-five(-\w+)?\.vercel\.app$/ // Matches front-mu-five.vercel.app AND front-mu-five-branchname.vercel.app
+    'http://localhost:4200', // Local development frontend
+    'https://anarphy-portal.vercel.app', // Production frontend on Vercel
+    // Add more origins here if needed (e.g., staging environments)
   ];
 
   app.enableCors({
