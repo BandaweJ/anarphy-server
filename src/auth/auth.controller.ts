@@ -91,5 +91,11 @@ export class AuthController {
   restoreAccount(@Param('id') id: string) {
     return this.authService.restoreAccount(id);
   }
+
+  @Get('/bootstrap/status')
+  @UseGuards(AuthGuard())
+  getBootstrapStatus() {
+    return this.authService.getBootstrapStatus();
+  }
 }
 

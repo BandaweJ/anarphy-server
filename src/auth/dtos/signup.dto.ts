@@ -4,6 +4,7 @@ import { ApiProperty } from '@nestjs/swagger';
 
 export class AccountsDto {
   @ApiProperty()
+  @IsString()
   // @IsIn(['student', 'teacher', 'parent', 'admin', 'reception', 'hod', 'auditor', 'director])
   role: ROLES;
 

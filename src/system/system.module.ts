@@ -78,7 +78,7 @@ export class SystemModule implements OnModuleInit {
     setTimeout(async () => {
       try {
         await this.gradingSystemService.initializeDefaultGradingSystems();
-        this.logger.log('Default grading systems initialized');
+        this.logger.debug('Default grading systems initialized');
       } catch (error) {
         this.logger.error('Failed to initialize default grading systems:', error);
         // Don't throw - allow the app to continue starting
@@ -87,7 +87,7 @@ export class SystemModule implements OnModuleInit {
       try {
         // This will create default settings if none exist
         await this.systemSettingsService.getSettings();
-        this.logger.log('System settings initialized');
+        this.logger.debug('System settings initialized');
       } catch (error) {
         this.logger.error('Failed to initialize system settings:', error);
         // Don't throw - allow the app to continue starting

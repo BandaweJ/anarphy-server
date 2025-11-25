@@ -32,41 +32,36 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       ignoreExpiration: false, // Explicitly don't ignore expiration
     });
     
-    this.logger.log('JWT Strategy initialized', {
-      hasSecret: !!jwtSecret,
-      secretLength: jwtSecret?.length || 0,
-      ignoreExpiration: false,
-    });
+    
+    this.logger.log('JWT Strategy initialized successfully');
   }
 
   async validate(
     payload: JwtPayload,
-    ): Promise<TeachersEntity | ParentsEntity | StudentsEntity> {
-    this.logger.log('JWT Strategy: Validating payload', { 
-      username: payload.username, 
-      role: payload.role, 
-      id: payload.id 
-    });
-    
-    // Log that we received the payload (means token was successfully decoded)
-    this.logger.log('JWT Strategy: Token decoded successfully, payload received');
-    
-    const { username, role, id } = payload;
+    ): Promise<TeachersEntity | ParentsEntity | StudentsEntity | any> {
+    const { username, role, id, isBootstrap } = payload;
+
+    // Handle bootstrap user - skip account lookup
+    if (isBootstrap) {
+      return {
+        id: 'bootstrap',
+        role: 'admin',
+        username: 'bootstrap',
+        isBootstrap: true,
+      };
+    }
 
     if (!username || !role || !id) {
       this.logger.error(`JWT Strategy: Invalid payload - missing fields`, { username, role, id });
       throw new UnauthorizedException('Invalid JWT payload');
     }
 
-    this.logger.debug(`JWT Strategy: Looking up account for username: ${username}`);
     const user = await this.accountsRepository.findOne({ where: { username } });
 
     if (!user) {
       this.logger.error(`JWT Strategy: Account not found for username: ${username}`);
       throw new UnauthorizedException('You are not Authorised');
     }
-    
-    this.logger.log(`JWT Strategy: Account found, looking up profile for role: ${role}, id: ${id}`);
 
     try {
       let profile: TeachersEntity | ParentsEntity | StudentsEntity;
@@ -129,13 +124,6 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       // This ensures the role from accounts table is used (not the profile's role field)
       (profile as any).role = role;
       (profile as any).accountId = user.id;
-      
-      this.logger.log('JWT Strategy: Validation successful', {
-        username,
-        role,
-        profileId: (profile as any).id || (profile as any).studentNumber || (profile as any).email,
-        accountId: user.id,
-      });
       
       return profile;
     } catch (error) {

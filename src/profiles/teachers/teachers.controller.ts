@@ -19,7 +19,7 @@ import { ParentsEntity } from '../entities/parents.entity';
 import { StudentsEntity } from '../entities/students.entity';
 
 @Controller('teachers')
-@UseGuards(AuthGuard())
+@UseGuards(AuthGuard('jwt'))
 export class TeachersController {
   constructor(private teachersService: TeachersService) {}
 
@@ -41,7 +41,7 @@ export class TeachersController {
   @Post()
   createTeacher(
     @Body() createTeacherDto: CreateTeacherDto,
-    @GetUser() profile: TeachersEntity | ParentsEntity | StudentsEntity,
+    @GetUser() profile: TeachersEntity | ParentsEntity | StudentsEntity | any,
   ) {
     return this.teachersService.createTeacher(createTeacherDto, profile);
   }

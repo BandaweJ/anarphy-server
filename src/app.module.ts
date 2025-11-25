@@ -67,12 +67,12 @@ import { LoggingMiddleware } from './common/middleware/logging.middleware';
           // IMPORTANT: synchronize should be false in production!
           // Use migrations for production deployments.
           // Set to true only for development for automatic schema creation.
-          // synchronize: process.env.NODE_ENV === 'development',
+          synchronize: process.env.NODE_ENV === 'development',
           
-          synchronize: true, // TEMPORARY: Auto-create schema on first deployment
+          // synchronize: true, // TEMPORARY: Auto-create schema on first deployment
 
           // Optional: Enable logging in development for debugging queries
-          logging: true, // Enable logging to see schema creation
+          logging: process.env.NODE_ENV === 'development' ? ['error', 'warn'] : false, // Only log errors and warnings
 
           // SSL configuration for production (e.g., Render)
           // Render's PostgreSQL often requires SSL with rejectUnauthorized: false
@@ -103,10 +103,11 @@ import { LoggingMiddleware } from './common/middleware/logging.middleware';
   controllers: [AppController],
   providers: [
     AppService,
-    {
-      provide: APP_GUARD,
-      useClass: RolesGuard, // RolesGuard is provided in AuthModule and can access AccountsEntity
-    },
+    // Note: Removed RolesGuard as global guard - it should be applied per-route after JWT authentication
+    // {
+    //   provide: APP_GUARD,
+    //   useClass: RolesGuard, // RolesGuard is provided in AuthModule and can access AccountsEntity
+    // },
   ],
 })
 export class AppModule implements OnModuleInit, NestModule {
@@ -121,7 +122,6 @@ export class AppModule implements OnModuleInit, NestModule {
 
   onModuleInit() {
     this.logger.log('AppModule initialized - All modules loaded');
-    this.logger.warn('⚠️  Synchronize is ENABLED - TypeORM will auto-create database tables');
     this.logger.log('Server should be ready to accept requests');
   }
 }

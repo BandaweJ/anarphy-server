@@ -1448,7 +1448,7 @@ export class InvoiceService {
     const companyWebsite = 'www.juniorhighschool.ac.zw';
 
     try {
-      const imgPath = path.join(process.cwd(), 'public', 'jhs_logo.jpg');
+      const imgPath = path.join(process.cwd(), 'public', 'anarphy_logo.png');
       if (fs.existsSync(imgPath)) {
         doc.image(imgPath, 50, currentY, { width: 120, height: 120 });
       }

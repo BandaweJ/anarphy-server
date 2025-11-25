@@ -64,13 +64,23 @@ export class TeachersService {
 
   async createTeacher(
     createTeacherDto: CreateTeacherDto,
-    profile: TeachersEntity | ParentsEntity | StudentsEntity,
-  ): Promise<TeachersEntity> {
-    if (profile.role !== ROLES.admin) {
+    profile: TeachersEntity | ParentsEntity | StudentsEntity | any,
+  ): Promise<{ teacher: TeachersEntity; isFirstTeacher: boolean }> {
+    // Allow bootstrap user or admin to create teachers
+    const isBootstrap = (profile as any)?.isBootstrap === true;
+    const isAdmin = profile.role === ROLES.admin;
+    
+    if (!isBootstrap && !isAdmin) {
       throw new UnauthorizedException('Only admins can create new teachers');
     }
 
-    return await this.teachersRespository.save(createTeacherDto);
+    // Check if this is the first teacher
+    const teacherCount = await this.teachersRespository.count();
+    const isFirstTeacher = teacherCount === 0;
+
+    const teacher = await this.teachersRespository.save(createTeacherDto);
+
+    return { teacher, isFirstTeacher };
   }
 
   async deleteTeacher(

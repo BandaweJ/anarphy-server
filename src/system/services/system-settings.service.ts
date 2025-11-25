@@ -72,7 +72,7 @@ export class SystemSettingsService {
     });
 
     if (!settings) {
-      this.logger.log('No system settings found, creating default settings');
+      this.logger.debug('No system settings found, creating default settings');
       settings = await this.createDefaultSettings();
     }
 
@@ -114,7 +114,7 @@ export class SystemSettingsService {
       schoolPhone: '',
       schoolEmail: '',
       schoolWebsite: '',
-      schoolLogo: 'assets/jhs_logo.jpg',
+      schoolLogo: 'assets/anarphy_logo.png',
       // Branding colors matching current theme
       primaryColor: '#2196f3', // Blue
       accentColor: '#ffc107', // Gold

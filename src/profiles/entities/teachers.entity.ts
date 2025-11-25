@@ -24,8 +24,8 @@ export class TeachersEntity extends BaseEntity {
   @Column()
   surname: string;
 
-  @Column({ default: Timestamp })
-  dob: Date;
+  @Column({ nullable: true })
+  dob?: Date;
 
   @Column()
   gender: string;
@@ -36,8 +36,8 @@ export class TeachersEntity extends BaseEntity {
   @Column({ default: Timestamp })
   dateOfJoining: Date;
 
-  @Column({ type: 'simple-array' })
-  qualifications: string[];
+  @Column({ type: 'simple-array', nullable: true })
+  qualifications?: string[];
 
   @Column({ default: true })
   active: boolean;
@@ -48,11 +48,11 @@ export class TeachersEntity extends BaseEntity {
   @Column()
   email: string;
 
-  @Column()
-  address: string;
+  @Column({ nullable: true })
+  address?: string;
 
-  @Column({ default: Timestamp })
-  dateOfLeaving: Date;
+  @Column({ nullable: true })
+  dateOfLeaving?: Date;
 
   @Column()
   role: string;

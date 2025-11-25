@@ -10,6 +10,7 @@ import {
   IsString,
   MinLength,
 } from 'class-validator';
+import { Transform } from 'class-transformer';
 import { ROLES } from 'src/auth/models/roles.enum';
 
 export class CreateTeacherDto {
@@ -28,9 +29,10 @@ export class CreateTeacherDto {
   @MinLength(2)
   surname: string;
 
-  @ApiProperty()
-  @IsDateString()
+  @ApiProperty({ required: false })
   @IsOptional()
+  @IsDateString()
+  @Transform(({ value }) => value === '' ? undefined : value)
   dob?: Date;
 
   @ApiProperty()
@@ -46,9 +48,10 @@ export class CreateTeacherDto {
   @IsOptional()
   dateOfJoining?: Date;
 
-  @ApiProperty()
+  @ApiProperty({ required: false })
   @IsArray()
-  qualifications: string[];
+  @IsOptional()
+  qualifications?: string[];
 
   @ApiProperty()
   @IsBoolean()
@@ -64,13 +67,15 @@ export class CreateTeacherDto {
   @IsEmail()
   email: string;
 
-  @ApiProperty()
+  @ApiProperty({ required: false })
   @IsString()
-  address: string;
+  @IsOptional()
+  address?: string;
 
-  @ApiProperty()
+  @ApiProperty({ required: false })
   @IsOptional()
   @IsDateString()
+  @Transform(({ value }) => value === '' ? undefined : value)
   dateOfLeaving?: Date;
 
   @ApiProperty()

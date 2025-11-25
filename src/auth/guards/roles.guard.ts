@@ -26,6 +26,15 @@ export class RolesGuard implements CanActivate {
 
     const request = context.switchToHttp().getRequest();
     const { user } = request;
+    
+
+
+    // Handle bootstrap user - they should only access teacher creation, not system settings
+    if (user && (user as any).isBootstrap) {
+      console.log('RolesGuard: Bootstrap user detected');
+      // Bootstrap users should only be able to create teachers, not access other admin features
+      // Let the normal role checking continue for other endpoints
+    }
 
     if (!user) {
       // If roles are required but user is not found, this is an authentication issue
@@ -38,11 +47,6 @@ export class RolesGuard implements CanActivate {
       const authHeaderPresent = !!authHeader;
       
       // Log for debugging
-      console.error('RolesGuard: User not found in request. This should not happen if AuthGuard ran correctly.', {
-        url: request.url,
-        method: request.method,
-        hasAuthHeader: authHeaderPresent,
-      });
       
       // If there's no auth header, it's definitely an auth issue
       if (!authHeaderPresent) {
@@ -58,12 +62,6 @@ export class RolesGuard implements CanActivate {
     let userRole: string | undefined = (user as any).role;
     const accountId = (user as any).accountId;
 
-    console.log('RolesGuard: User found', {
-      userId: (user as any).id,
-      userRole,
-      accountId,
-      userObjectKeys: Object.keys(user),
-    });
 
     if (!userRole && accountId) {
       try {
@@ -98,13 +96,6 @@ export class RolesGuard implements CanActivate {
       throw new ForbiddenException(`Invalid user role: ${normalizedRole}`);
     }
 
-    console.log('RolesGuard: Checking access', {
-      userRole: normalizedRole,
-      requiredRoles,
-      hasAccess: requiredRoles.some(r => r.toLowerCase() === normalizedRole),
-      userId: (user as any).id,
-      accountId
-    });
 
     const hasRequiredRole = requiredRoles.some(requiredRole =>
       requiredRole.toLowerCase() === normalizedRole

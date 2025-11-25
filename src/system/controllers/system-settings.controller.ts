@@ -15,6 +15,7 @@ import { HasRoles } from 'src/auth/decorators/has-roles.decorator';
 import { ROLES } from 'src/auth/models/roles.enum';
 import { SystemSettingsService, SystemSettingsDto } from '../services/system-settings.service';
 
+
 @Controller('system/settings')
 export class SystemSettingsController {
   constructor(private readonly systemSettingsService: SystemSettingsService) {}
@@ -26,7 +27,7 @@ export class SystemSettingsController {
   }
 
   @Put()
-  @UseGuards(AuthGuard(), RolesGuard)
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
   @HasRoles(ROLES.admin, ROLES.director)
   @HttpCode(HttpStatus.OK)
   async updateSettings(@Body() updateDto: SystemSettingsDto) {
@@ -34,7 +35,7 @@ export class SystemSettingsController {
   }
 
   @Post('reset')
-  @UseGuards(AuthGuard(), RolesGuard)
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
   @HasRoles(ROLES.admin)
   @HttpCode(HttpStatus.OK)
   async resetToDefaults() {

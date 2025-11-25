@@ -139,7 +139,7 @@ export class GradingSystemService {
       return; // Already initialized
     }
 
-    this.logger.log('Initializing default grading systems...');
+    this.logger.debug('Initializing default grading systems...');
 
     // A Level defaults
     await this.saveGradingSystem(
@@ -169,7 +169,7 @@ export class GradingSystemService {
       'U',
     );
 
-    this.logger.log('Default grading systems initialized');
+    this.logger.debug('Default grading systems initialized');
   }
 }
 

@@ -133,54 +133,17 @@ export class AuthService {
       case ROLES.admin:
       case ROLES.auditor:
       case ROLES.director: {
-        // Try to get existing teacher, or create one if it doesn't exist (for initial admin setup)
-        let tr: TeachersEntity;
-        try {
-          tr = await this.resourceById.getTeacherById(id);
-        } catch (error) {
-          // If teacher doesn't exist, create a minimal teacher record for admin/director roles
-          // ONLY when the teachers table is empty (first-time bootstrap scenario)
-          const privilegedRole = role === ROLES.admin || role === ROLES.director;
-          if (error instanceof NotFoundException && privilegedRole) {
-            const teacherCount = await this.teachersRepository.count();
-            if (teacherCount === 0) {
-              tr = this.teachersRepository.create({
-                id: id,
-                name: 'Admin',
-                surname: 'User',
-                dob: new Date(),
-                gender: 'Other',
-                title: 'Mr',
-                dateOfJoining: new Date(),
-                qualifications: [],
-                active: true,
-                cell: '',
-                email: '',
-                address: '',
-                dateOfLeaving: null,
-                role: role,
-              });
-              tr = await this.teachersRepository.save(tr);
-            } else {
-              throw error;
-            }
-          } else {
-            // For other roles (teacher, reception, hod, auditor) or when table has data, teacher must exist
-            throw error;
-          }
-        }
+        const tr = await this.resourceById.getTeacherById(id);
 
         try {
           account.teacher = tr;
-          const user = await this.accountsRepository.save({
-            ...account,
-          });
+          const user = await this.accountsRepository.save(account);
           return { response: true };
         } catch (err) {
-          if (err.code === 'ER_DUP_ENTRY') {
+          if (err.code === 'ER_DUP_ENTRY' || err.code === '23505') {
             throw new BadRequestException('Username Already taken');
           } else {
-            throw new NotImplementedException('Failed to create account');
+            throw new NotImplementedException(`Failed to create account: ${err.message}`);
           }
         }
         break;
@@ -192,7 +155,24 @@ export class AuthService {
     return await bcrypt.hash(password, salt);
   }
 
-  async signin(signinDto: SigninDto): Promise<{ accessToken: string; permissions: string[] }> {
+  async signin(signinDto: SigninDto): Promise<{ accessToken: string; permissions: string[]; isBootstrap?: boolean }> {
+    // Check if database is empty (bootstrap mode)
+    const accountCount = await this.accountsRepository.count();
+    const isBootstrap = accountCount === 0;
+
+    // In bootstrap mode, allow any credentials to login as bootstrap admin
+    if (isBootstrap) {
+      const payload = { 
+        username: 'bootstrap', 
+        role: 'admin', 
+        id: 'bootstrap',
+        isBootstrap: true 
+      };
+      const accessToken = await this.jwtService.sign(payload);
+      return { accessToken, permissions: ['*'], isBootstrap: true };
+    }
+
+    // Normal login flow
     const result = await this.validatePassword(signinDto);
 
     if (!result) {
@@ -234,7 +214,7 @@ export class AuthService {
       console.error('Failed to log login activity:', error);
     }
 
-    return { accessToken, permissions };
+    return { accessToken, permissions, isBootstrap: false };
   }
 
   private async validatePassword(signinDto: SigninDto): Promise<JwtPayload> {
@@ -621,5 +601,15 @@ export class AuthService {
   async getUserActivity(id: string, page: number = 1, limit: number = 20): Promise<any> {
     // Use the ActivityService to get real activity data
     return await this.activityService.getUserActivities(id, page, limit);
+  }
+
+  async getBootstrapStatus(): Promise<{ isBootstrap: boolean; hasTeachers: boolean }> {
+    const accountCount = await this.accountsRepository.count();
+    const teacherCount = await this.teachersRepository.count();
+    
+    return {
+      isBootstrap: accountCount === 0,
+      hasTeachers: teacherCount > 0,
+    };
   }
 }

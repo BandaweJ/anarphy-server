@@ -19,6 +19,7 @@ import { RolesPermissionsService } from './services/roles-permissions.service';
 import { RolesGuard } from './guards/roles.guard';
 import { PermissionsGuard } from './guards/permissions.guard';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
+import { DebugJwtGuard } from './guards/debug-jwt.guard';
 
 @Module({
   imports: [
@@ -65,6 +66,7 @@ import { JwtAuthGuard } from './guards/jwt-auth.guard';
     RolesGuard, // Provide RolesGuard here so it can access AccountsEntity repository
     PermissionsGuard, // Provide PermissionsGuard for permission-based access control
     JwtAuthGuard, // Provide JwtAuthGuard for better error handling
+    DebugJwtGuard, // Provide DebugJwtGuard for debugging authentication issues
   ],
   exports: [
     JwtStrategy, 
@@ -73,6 +75,7 @@ import { JwtAuthGuard } from './guards/jwt-auth.guard';
     RolesGuard, // Export RolesGuard so AppModule can use it as APP_GUARD
     PermissionsGuard, // Export PermissionsGuard for use in other modules
     JwtAuthGuard, // Export JwtAuthGuard for use in other modules
+    DebugJwtGuard, // Export DebugJwtGuard for use in other modules
     TypeOrmModule, // Export TypeOrmModule so RolesGuard can access AccountsEntity
   ],
 })

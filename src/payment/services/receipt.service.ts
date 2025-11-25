@@ -1267,7 +1267,7 @@ export class ReceiptService {
     const sectionHeadingFontSize = 13;
     const footerFontSize = 9;
 
-    const logoPath = path.join(process.cwd(), 'public', 'jhs_logo.jpg');
+    const logoPath = path.join(process.cwd(), 'public', 'anarphy_logo.png');
 
     return new Promise(async (resolve, reject) => {
       const doc = new PDFDocument({
