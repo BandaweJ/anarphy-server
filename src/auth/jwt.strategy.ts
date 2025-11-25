@@ -40,7 +40,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     payload: JwtPayload,
     ): Promise<TeachersEntity | ParentsEntity | StudentsEntity | any> {
     const { username, role, id, isBootstrap } = payload;
-
+    
     // Handle bootstrap user - skip account lookup
     if (isBootstrap) {
       return {

@@ -67,9 +67,9 @@ import { LoggingMiddleware } from './common/middleware/logging.middleware';
           // IMPORTANT: synchronize should be false in production!
           // Use migrations for production deployments.
           // Set to true only for development for automatic schema creation.
-          synchronize: process.env.NODE_ENV === 'development',
+          // synchronize: process.env.NODE_ENV === 'development',
           
-          // synchronize: true, // TEMPORARY: Auto-create schema on first deployment
+          synchronize: true, // TEMPORARY: Auto-create schema on first deployment
 
           // Optional: Enable logging in development for debugging queries
           logging: process.env.NODE_ENV === 'development' ? ['error', 'warn'] : false, // Only log errors and warnings

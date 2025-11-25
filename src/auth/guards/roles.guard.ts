@@ -26,7 +26,7 @@ export class RolesGuard implements CanActivate {
 
     const request = context.switchToHttp().getRequest();
     const { user } = request;
-    
+
 
 
     // Handle bootstrap user - they should only access teacher creation, not system settings
