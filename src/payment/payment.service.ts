@@ -57,7 +57,7 @@ export class PaymentService {
     );
 
     const userRole = await this.getUserRoleByEmail(voidedByEmail);
-    const allowedRoles = [ROLES.auditor, ROLES.director];
+    const allowedRoles = [ROLES.auditor, ROLES.director, ROLES.reception];
     if (!allowedRoles.includes(userRole)) {
       logStructured(
         this.logger,
@@ -67,7 +67,7 @@ export class PaymentService {
         { receiptId, voidedByEmail, userRole },
       );
       throw new UnauthorizedException(
-        'Only auditors and directors can void receipts.',
+        'Only auditors, directors, and reception staff can void receipts.',
       );
     }
 

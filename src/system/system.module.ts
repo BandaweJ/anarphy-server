@@ -30,6 +30,7 @@ import { CalendarEventEntity } from './entities/calendar-event.entity';
 import { EventNotificationEntity } from './entities/event-notification.entity';
 import { CalendarService } from './services/calendar.service';
 import { CalendarController } from './controllers/calendar.controller';
+import { RolesPermissionsService } from '../auth/services/roles-permissions.service';
 
 @Module({
   imports: [
@@ -70,6 +71,7 @@ export class SystemModule implements OnModuleInit {
   constructor(
     private readonly gradingSystemService: GradingSystemService,
     private readonly systemSettingsService: SystemSettingsService,
+    private readonly rolesPermissionsService: RolesPermissionsService,
   ) {}
 
   async onModuleInit() {
@@ -90,6 +92,17 @@ export class SystemModule implements OnModuleInit {
         this.logger.debug('System settings initialized');
       } catch (error) {
         this.logger.error('Failed to initialize system settings:', error);
+        // Don't throw - allow the app to continue starting
+      }
+
+      try {
+        // Initialize roles and permissions
+        await this.rolesPermissionsService.seedRoles();
+        await this.rolesPermissionsService.seedPermissions();
+        await this.rolesPermissionsService.seedRolePermissions();
+        this.logger.debug('Roles and permissions initialized');
+      } catch (error) {
+        this.logger.error('Failed to initialize roles and permissions:', error);
         // Don't throw - allow the app to continue starting
       }
     }, 1000); // Wait 1 second after server starts

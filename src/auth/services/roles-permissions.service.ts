@@ -323,6 +323,117 @@ export class RolesPermissionsService {
     this.logger.log('Permission seeding completed');
   }
 
+  /**
+   * Seed default role permissions
+   * This assigns default permissions to system roles
+   */
+  async seedRolePermissions(): Promise<void> {
+    this.logger.log('Starting role permissions seeding...');
+
+    // Define default permissions for each role
+    const rolePermissions: Record<string, string[]> = {
+      [ROLES.admin]: [
+        // Admin has all permissions
+        ...Object.values(PERMISSIONS.FINANCE),
+        ...Object.values(PERMISSIONS.REPORTS),
+        ...Object.values(PERMISSIONS.MARKS),
+        ...Object.values(PERMISSIONS.ATTENDANCE),
+        ...Object.values(PERMISSIONS.ENROLMENT),
+        ...Object.values(PERMISSIONS.USERS),
+        ...Object.values(PERMISSIONS.SYSTEM),
+      ],
+      [ROLES.director]: [
+        // Director has comprehensive oversight permissions
+        ...Object.values(PERMISSIONS.FINANCE),
+        ...Object.values(PERMISSIONS.REPORTS),
+        ...Object.values(PERMISSIONS.MARKS),
+        ...Object.values(PERMISSIONS.ATTENDANCE),
+        ...Object.values(PERMISSIONS.ENROLMENT),
+        PERMISSIONS.USERS.VIEW,
+        PERMISSIONS.USERS.EDIT,
+        PERMISSIONS.SYSTEM.VIEW_SETTINGS,
+        PERMISSIONS.SYSTEM.VIEW_AUDIT,
+      ],
+      [ROLES.auditor]: [
+        // Auditor has financial oversight permissions
+        ...Object.values(PERMISSIONS.FINANCE),
+        ...Object.values(PERMISSIONS.REPORTS),
+        PERMISSIONS.ATTENDANCE.VIEW,
+        PERMISSIONS.ATTENDANCE.VIEW_REPORTS,
+        PERMISSIONS.ENROLMENT.VIEW,
+        PERMISSIONS.SYSTEM.VIEW_AUDIT,
+      ],
+      [ROLES.reception]: [
+        // Reception now has all director and auditor permissions
+        ...Object.values(PERMISSIONS.FINANCE),
+        ...Object.values(PERMISSIONS.REPORTS),
+        ...Object.values(PERMISSIONS.MARKS),
+        ...Object.values(PERMISSIONS.ATTENDANCE),
+        ...Object.values(PERMISSIONS.ENROLMENT),
+        PERMISSIONS.USERS.VIEW,
+        PERMISSIONS.USERS.EDIT,
+        PERMISSIONS.SYSTEM.VIEW_SETTINGS,
+        PERMISSIONS.SYSTEM.VIEW_AUDIT,
+      ],
+      [ROLES.teacher]: [
+        // Teacher permissions for class and student management
+        PERMISSIONS.FINANCE.VIEW,
+        PERMISSIONS.FINANCE.VIEW_REPORTS,
+        ...Object.values(PERMISSIONS.REPORTS),
+        ...Object.values(PERMISSIONS.MARKS),
+        ...Object.values(PERMISSIONS.ATTENDANCE),
+        PERMISSIONS.ENROLMENT.VIEW,
+        PERMISSIONS.ENROLMENT.EDIT,
+      ],
+      [ROLES.hod]: [
+        // Head of Department permissions
+        PERMISSIONS.FINANCE.VIEW,
+        PERMISSIONS.FINANCE.VIEW_REPORTS,
+        ...Object.values(PERMISSIONS.REPORTS),
+        ...Object.values(PERMISSIONS.MARKS),
+        ...Object.values(PERMISSIONS.ATTENDANCE),
+        ...Object.values(PERMISSIONS.ENROLMENT),
+        PERMISSIONS.USERS.VIEW,
+      ],
+    };
+
+    // Assign permissions to roles
+    for (const [roleName, permissionNames] of Object.entries(rolePermissions)) {
+      try {
+        // Find the role
+        const role = await this.roleRepository.findOne({
+          where: { name: roleName },
+          relations: ['permissions'],
+        });
+
+        if (!role) {
+          this.logger.warn(`Role ${roleName} not found, skipping permission assignment`);
+          continue;
+        }
+
+        // Find all permissions
+        const permissions = await this.permissionRepository.find({
+          where: { name: In(permissionNames) },
+        });
+
+        if (permissions.length === 0) {
+          this.logger.warn(`No permissions found for role ${roleName}`);
+          continue;
+        }
+
+        // Clear existing permissions and assign new ones
+        role.permissions = permissions;
+        await this.roleRepository.save(role);
+
+        this.logger.log(`Assigned ${permissions.length} permissions to role ${roleName}`);
+      } catch (error) {
+        this.logger.error(`Failed to assign permissions to role ${roleName}:`, error);
+      }
+    }
+
+    this.logger.log('Role permissions seeding completed');
+  }
+
   async findPermissionById(id: string): Promise<PermissionEntity> {
     const permission = await this.permissionRepository.findOne({
       where: { id },
