@@ -15,7 +15,6 @@ import { CreateFeesDto } from './dtos/fees.dto';
 import { GetUser } from 'src/auth/decorators/get-user.decorator';
 import { TeachersEntity } from 'src/profiles/entities/teachers.entity';
 import { FinanceService } from './finance.service';
-import { CreateBalancesDto } from './dtos/balances.dto';
 import { CreateBillDto } from './dtos/bills.dto';
 
 @Controller('finance')
@@ -34,15 +33,6 @@ export class FinanceController {
     @GetUser() profile: TeachersEntity,
   ) {
     return this.financeService.createFees(createFeesDto, profile);
-  }
-
-  @Post('fees/balance')
-  createFeesBalance(
-    @Body() createBalanceDto: CreateBalancesDto,
-    @GetUser() profile: TeachersEntity,
-  ) {
-    // console.log('create balance');
-    return this.financeService.createBalance(createBalanceDto, profile);
   }
 
   @Patch('fees/:id')

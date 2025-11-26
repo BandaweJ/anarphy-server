@@ -4,20 +4,25 @@ import {
   Injectable,
   NotFoundException,
   NotImplementedException,
+  UnauthorizedException,
+  Logger,
+  ConflictException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Like, Repository } from 'typeorm';
 import { CreateStudentDto } from '../dtos/createStudents.dto';
 import { StudentsEntity } from '../entities/students.entity';
 import { UpdateStudentDto } from '../dtos/updateStudent.dto';
+import { UpdateStudentByParentDto } from '../dtos/updateStudentByParent.dto';
 import { ResourceByIdService } from 'src/resource-by-id/resource-by-id.service';
 import { TeachersEntity } from '../entities/teachers.entity';
 import { ParentsEntity } from '../entities/parents.entity';
 import { ROLES } from '../../auth/models/roles.enum';
-import { UnauthorizedException } from '@nestjs/common';
 
 @Injectable()
 export class StudentsService {
+  private readonly logger = new Logger(StudentsService.name);
+
   constructor(
     @InjectRepository(StudentsEntity)
     private studentsRepository: Repository<StudentsEntity>,
@@ -28,65 +33,141 @@ export class StudentsService {
     studentNumber: string,
     profile: TeachersEntity | ParentsEntity | StudentsEntity,
   ): Promise<StudentsEntity> {
-    switch (profile.role) {
-      case ROLES.admin:
-      case ROLES.hod:
-      case ROLES.teacher:
-      case ROLES.reception: {
-        return await this.resourceById.getStudentByStudentNumber(studentNumber);
-        break;
+    if (!studentNumber) {
+      throw new BadRequestException('Student number is required');
+    }
+
+    try {
+      const student = await this.resourceById.getStudentByStudentNumber(studentNumber);
+      
+      if (!student) {
+        throw new NotFoundException(`Student with number ${studentNumber} not found`);
       }
-      case ROLES.parent: {
-        const student = await this.resourceById.getStudentByStudentNumber(
-          studentNumber,
-        );
-        if (student.parent == profile) {
+
+      // Authorization checks
+      switch (profile.role) {
+        case ROLES.admin:
+        case ROLES.director:
+        case ROLES.auditor: {
+          // Full access to any student record
           return student;
-        } else {
-          throw new UnauthorizedException(
-            'Parents can only access records of their children',
-          );
         }
-        break;
-      }
-      case ROLES.student: {
-        const student = await this.resourceById.getStudentByStudentNumber(
-          studentNumber,
-        );
-        if ('studentNumber' in profile) {
-          if (profile.studentNumber === student.studentNumber) {
-            return student;
+        case ROLES.hod:
+        case ROLES.teacher:
+        case ROLES.reception: {
+          // Staff access to student records
+          return student;
+        }
+        case ROLES.parent: {
+          if (profile instanceof ParentsEntity) {
+            // Parents can access their children's records
+            if (student.parent?.email === profile.email) {
+              this.logger.log(`Parent ${profile.email} accessing child ${studentNumber}`);
+              return student;
+            } else {
+              throw new UnauthorizedException(
+                'Parents can only access records of their children',
+              );
+            }
           } else {
-            throw new UnauthorizedException(
-              'you can only access your own record',
-            );
+            throw new UnauthorizedException('Invalid parent profile');
           }
         }
+        case ROLES.student: {
+          if (profile instanceof StudentsEntity) {
+            // Students can access their own records
+            if (profile.studentNumber === student.studentNumber) {
+              return student;
+            } else {
+              throw new UnauthorizedException(
+                'You can only access your own record',
+              );
+            }
+          } else {
+            throw new UnauthorizedException('Invalid student profile');
+          }
+        }
+        default:
+          throw new UnauthorizedException('Insufficient permissions');
       }
+    } catch (error) {
+      if (error instanceof UnauthorizedException || error instanceof NotFoundException || error instanceof BadRequestException) {
+        throw error;
+      }
+      this.logger.error(`Error getting student ${studentNumber}:`, error);
+      throw new NotFoundException(`Student with number ${studentNumber} not found`);
     }
   }
 
   async getAllStudents(
     profile: TeachersEntity | ParentsEntity | StudentsEntity,
   ): Promise<StudentsEntity[]> {
+    // Authorization check - Only staff can view all students
     switch (profile.role) {
-      case ROLES.parent:
+      case ROLES.admin:
+      case ROLES.director:
+      case ROLES.auditor:
+      case ROLES.hod:
+      case ROLES.teacher:
+      case ROLES.reception: {
+        // Staff can access all students
+        break;
+      }
+      case ROLES.parent: {
+        // Parents can only see their own children
+        if (profile instanceof ParentsEntity) {
+          const students = await this.studentsRepository.find({
+            where: { parent: { email: profile.email } },
+            relations: ['parent'],
+          });
+          this.logger.log(`Parent ${profile.email} accessing their ${students.length} children`);
+          return students;
+        }
+        throw new UnauthorizedException('Invalid parent profile');
+      }
       case ROLES.student: {
         throw new UnauthorizedException(
-          'You are not allowed to retrieve list of all students',
+          'Students cannot retrieve list of all students',
         );
       }
+      default:
+        throw new UnauthorizedException('Insufficient permissions');
     }
-    return await this.studentsRepository.find();
+
+    try {
+      const students = await this.studentsRepository.find({
+        relations: ['parent'],
+        order: { surname: 'ASC', name: 'ASC' },
+      });
+      this.logger.log(`Retrieved ${students.length} students for user ${profile.role}`);
+      return students;
+    } catch (error) {
+      this.logger.error('Error retrieving students:', error);
+      throw new BadRequestException('Failed to retrieve students');
+    }
   }
 
   async createStudent(
     createStudentDto: CreateStudentDto,
     profile: TeachersEntity | ParentsEntity | StudentsEntity,
   ): Promise<StudentsEntity> {
-    // A more explicit way to handle roles
-    if (profile.role !== ROLES.admin && profile.role !== ROLES.reception) {
-      throw new UnauthorizedException('Only admins can add new students');
+    // Authorization check - Only admin, director, auditor can create students
+    switch (profile.role) {
+      case ROLES.admin:
+      case ROLES.director:
+      case ROLES.auditor: {
+        // Allowed to create students
+        break;
+      }
+      case ROLES.hod:
+      case ROLES.teacher:
+      case ROLES.reception:
+      case ROLES.parent:
+      case ROLES.student: {
+        throw new UnauthorizedException('Only admins, directors, and auditors can add new students');
+      }
+      default:
+        throw new UnauthorizedException('Insufficient permissions');
     }
 
     // Step 1: Check for an existing student with the same name and surname
@@ -153,12 +234,97 @@ export class StudentsService {
     updateStudentDto: UpdateStudentDto,
     profile: TeachersEntity | ParentsEntity | StudentsEntity,
   ): Promise<StudentsEntity> {
-    const student = await this.getStudent(studentNumber, profile);
+    if (!studentNumber) {
+      throw new BadRequestException('Student number is required');
+    }
 
-    return await this.studentsRepository.save({
-      ...student,
-      ...updateStudentDto,
-    });
+    if (!updateStudentDto || Object.keys(updateStudentDto).length === 0) {
+      throw new BadRequestException('Update data is required');
+    }
+
+    // Authorization check for full updates
+    switch (profile.role) {
+      case ROLES.admin:
+      case ROLES.director:
+      case ROLES.auditor:
+      case ROLES.hod:
+      case ROLES.teacher:
+      case ROLES.reception: {
+        // Staff can perform full updates
+        break;
+      }
+      case ROLES.parent:
+      case ROLES.student: {
+        throw new UnauthorizedException('Use updateStudentByParent for parent updates or contact school administration');
+      }
+      default:
+        throw new UnauthorizedException('Insufficient permissions');
+    }
+
+    try {
+      const student = await this.getStudent(studentNumber, profile);
+
+      const updatedStudent = await this.studentsRepository.save({
+        ...student,
+        ...updateStudentDto,
+      });
+
+      this.logger.log(`Student ${studentNumber} updated by ${profile.role}`);
+      return updatedStudent;
+    } catch (error) {
+      if (error instanceof UnauthorizedException || error instanceof NotFoundException || error instanceof BadRequestException) {
+        throw error;
+      }
+      this.logger.error(`Error updating student ${studentNumber}:`, error);
+      throw new BadRequestException('Failed to update student');
+    }
+  }
+
+  /**
+   * Update student record by parent - restricted fields only
+   */
+  async updateStudentByParent(
+    studentNumber: string,
+    updateStudentDto: UpdateStudentByParentDto,
+    profile: ParentsEntity,
+  ): Promise<StudentsEntity> {
+    if (!studentNumber) {
+      throw new BadRequestException('Student number is required');
+    }
+
+    if (!updateStudentDto || Object.keys(updateStudentDto).length === 0) {
+      throw new BadRequestException('Update data is required');
+    }
+
+    // Verify parent role
+    if (profile.role !== ROLES.parent) {
+      throw new UnauthorizedException('This method is only for parent updates');
+    }
+
+    try {
+      // Get student and verify parent relationship
+      const student = await this.getStudent(studentNumber, profile);
+
+      // Verify parent owns this student
+      if (student.parent?.email !== profile.email) {
+        throw new UnauthorizedException('Parents can only update their own children');
+      }
+
+      // Update only allowed fields
+      const updatedStudent = await this.studentsRepository.save({
+        ...student,
+        ...updateStudentDto,
+      });
+
+      this.logger.log(`Student ${studentNumber} updated by parent ${profile.email}`);
+      return updatedStudent;
+    } catch (error) {
+      if (error instanceof UnauthorizedException || error instanceof NotFoundException || error instanceof BadRequestException) {
+        throw error;
+      }
+      this.logger.error(`Error updating student ${studentNumber} by parent:`, error);
+      throw new BadRequestException('Failed to update student');
+    }
   }
 
   private async nextStudentNumber(): Promise<string> {
@@ -171,7 +337,9 @@ export class StudentsService {
      * C is the check digit
      */
 
-    const schoolPrefix = 'S';
+    // School prefix: first letter of the school name.
+    // For Anarphy, we use 'A'.
+    const schoolPrefix = 'A';
     const today = new Date();
     const YY = today.getFullYear().toString().substring(2);
     // Use padStart for safe two-digit month formatting

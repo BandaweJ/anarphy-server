@@ -7,7 +7,6 @@ import { FeesEntity } from './entities/fees.entity';
 import { AuthModule } from 'src/auth/auth.module';
 import { EnrolmentModule } from 'src/enrolment/enrolment.module';
 import { BillsEntity } from './entities/bills.entity';
-import { BalancesEntity } from './entities/balances.entity';
 
 @Module({
   controllers: [FinanceController],
@@ -17,7 +16,7 @@ import { BalancesEntity } from './entities/balances.entity';
     AuthModule,
     // EnrolmentModule,
     forwardRef(() => EnrolmentModule),
-    TypeOrmModule.forFeature([FeesEntity, BillsEntity, BalancesEntity]),
+    TypeOrmModule.forFeature([FeesEntity, BillsEntity]),
   ],
 })
 export class FinanceModule {}

@@ -117,8 +117,17 @@ export class MarksController {
   }
 
   @Get('/studentMarks/:studentNumber')
-  getStudentMarks(@Param('studentNumber') studentNumber: string) {
-    return this.marksService.getStudentMarks(studentNumber);
+  @ApiOperation({ summary: 'Get marks for a specific student' })
+  @ApiParam({ name: 'studentNumber', description: 'Student number' })
+  @ApiResponse({ status: 200, description: 'Marks retrieved successfully' })
+  async getStudentMarks(
+    @Param('studentNumber') studentNumber: string,
+    @GetUser() profile: StudentsEntity | ParentsEntity | TeachersEntity,
+  ) {
+    return this.marksService.getStudentMarksForProfile(
+      studentNumber,
+      profile,
+    );
   }
 
   /**

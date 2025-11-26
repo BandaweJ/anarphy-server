@@ -294,6 +294,26 @@ export class RolesPermissionsService {
       });
     });
 
+    // Parents permissions
+    Object.entries(PERMISSIONS.PARENTS).forEach(([key, name]) => {
+      permissionsToCreate.push({
+        name,
+        description: formatDescription(key, 'Parents'),
+        resource: 'parents',
+        action: key.toLowerCase(),
+      });
+    });
+
+    // Students permissions
+    Object.entries(PERMISSIONS.STUDENTS).forEach(([key, name]) => {
+      permissionsToCreate.push({
+        name,
+        description: formatDescription(key, 'Students'),
+        resource: 'students',
+        action: key.toLowerCase(),
+      });
+    });
+
     // System permissions
     Object.entries(PERMISSIONS.SYSTEM).forEach(([key, name]) => {
       permissionsToCreate.push({
@@ -349,6 +369,8 @@ export class RolesPermissionsService {
         ...Object.values(PERMISSIONS.MARKS),
         ...Object.values(PERMISSIONS.ATTENDANCE),
         ...Object.values(PERMISSIONS.ENROLMENT),
+        ...Object.values(PERMISSIONS.PARENTS),
+        ...Object.values(PERMISSIONS.STUDENTS),
         PERMISSIONS.USERS.VIEW,
         PERMISSIONS.USERS.EDIT,
         PERMISSIONS.SYSTEM.VIEW_SETTINGS,
@@ -361,6 +383,8 @@ export class RolesPermissionsService {
         PERMISSIONS.ATTENDANCE.VIEW,
         PERMISSIONS.ATTENDANCE.VIEW_REPORTS,
         PERMISSIONS.ENROLMENT.VIEW,
+        ...Object.values(PERMISSIONS.PARENTS),
+        ...Object.values(PERMISSIONS.STUDENTS),
         PERMISSIONS.SYSTEM.VIEW_AUDIT,
       ],
       [ROLES.reception]: [
@@ -370,6 +394,9 @@ export class RolesPermissionsService {
         ...Object.values(PERMISSIONS.MARKS),
         ...Object.values(PERMISSIONS.ATTENDANCE),
         ...Object.values(PERMISSIONS.ENROLMENT),
+        PERMISSIONS.STUDENTS.VIEW,
+        PERMISSIONS.STUDENTS.EDIT,
+        PERMISSIONS.PARENTS.VIEW,
         PERMISSIONS.USERS.VIEW,
         PERMISSIONS.USERS.EDIT,
         PERMISSIONS.SYSTEM.VIEW_SETTINGS,
@@ -384,6 +411,8 @@ export class RolesPermissionsService {
         ...Object.values(PERMISSIONS.ATTENDANCE),
         PERMISSIONS.ENROLMENT.VIEW,
         PERMISSIONS.ENROLMENT.EDIT,
+        PERMISSIONS.STUDENTS.VIEW,
+        PERMISSIONS.STUDENTS.EDIT,
       ],
       [ROLES.hod]: [
         // Head of Department permissions
@@ -393,7 +422,18 @@ export class RolesPermissionsService {
         ...Object.values(PERMISSIONS.MARKS),
         ...Object.values(PERMISSIONS.ATTENDANCE),
         ...Object.values(PERMISSIONS.ENROLMENT),
+        PERMISSIONS.STUDENTS.VIEW,
+        PERMISSIONS.STUDENTS.EDIT,
         PERMISSIONS.USERS.VIEW,
+      ],
+      [ROLES.parent]: [
+        // Parent permissions for their own children
+        PERMISSIONS.STUDENTS.VIEW_OWN,
+        PERMISSIONS.STUDENTS.EDIT_OWN,
+      ],
+      [ROLES.student]: [
+        // Student permissions for their own record
+        PERMISSIONS.STUDENTS.VIEW_OWN,
       ],
     };
 

@@ -43,3 +43,4 @@ COMMIT;
 
 -- Success message
 SELECT 'Migration completed successfully! The dob column in teachers table is now nullable.' as status;
+

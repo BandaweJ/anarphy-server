@@ -321,6 +321,38 @@ export class MarksService {
     });
   }
 
+  /**
+   * Get marks for a student with profile-based authorization.
+   * - Admin/teachers/HOD can view any student's marks
+   * - Parent can view marks for their own children
+   * - Student can view their own marks
+   */
+  async getStudentMarksForProfile(
+    studentNumber: string,
+    profile: StudentsEntity | ParentsEntity | TeachersEntity,
+  ): Promise<MarksEntity[]> {
+    if (!studentNumber) {
+      throw new BadRequestException('Student number is required');
+    }
+
+    // Load the student to validate parent/student relationship
+    const student = await this.studentsService.getStudent(
+      studentNumber,
+      profile,
+    );
+
+    // studentsService.getStudent already enforces:
+    // - staff can see any
+    // - parents only their children
+    // - students only themselves
+    // So if we got here without an exception, authorization is OK.
+
+    return this.marksRepository.find({
+      where: { student: { studentNumber: student.studentNumber } },
+      relations: ['subject', 'student'],
+    });
+  }
+
   async deleteMark(
     id: number,
     profile: StudentsEntity | ParentsEntity | TeachersEntity,

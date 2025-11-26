@@ -2,7 +2,6 @@ import { ApiProperty } from '@nestjs/swagger';
 import {
   IsDateString,
   IsEmail,
-  IsNotEmpty,
   IsOptional,
   IsPhoneNumber,
   IsString,
@@ -10,42 +9,26 @@ import {
   MinLength,
 } from 'class-validator';
 
-export class CreateStudentDto {
-  // @ApiProperty()
-  // @IsString()
-  // @IsNotEmpty()
-  // @Length(8, 8)
-  // studentNumber: string;
-
-  @ApiProperty()
-  @IsString()
-  @MinLength(2)
-  name: string;
-
-  @ApiProperty()
-  @IsString()
-  @MinLength(2)
-  surname: string;
-
+/**
+ * DTO for parent updates to student records
+ * Excludes sensitive fields like studentNumber, role, etc.
+ */
+export class UpdateStudentByParentDto {
   @ApiProperty({ required: false })
   @IsOptional()
   @IsDateString()
   dob?: Date;
 
-  @ApiProperty()
+  @ApiProperty({ required: false })
   @IsString()
-  gender: string;
+  @IsOptional()
+  gender?: string;
 
   @ApiProperty({ required: false })
-  @IsOptional()
   @IsString()
+  @IsOptional()
   // @MinLength(10)
   idnumber?: string;
-
-  @ApiProperty({ required: false })
-  @IsOptional()
-  @IsDateString()
-  dateOfJoining?: Date;
 
   @ApiProperty({ required: false })
   @IsOptional()
@@ -69,7 +52,13 @@ export class CreateStudentDto {
   @IsString()
   prevSchool?: string;
 
-  @ApiProperty()
-  @IsOptional()
-  residence: 'Day' | 'Boarder';
+  // Note: Fields NOT allowed for parent updates:
+  // - studentNumber (system generated)
+  // - name (requires admin approval)
+  // - surname (requires admin approval)
+  // - dateOfJoining (system managed)
+  // - role (system managed)
+  // - enrols (managed by school)
+  // - marks, attendance, etc. (managed by teachers)
 }
+

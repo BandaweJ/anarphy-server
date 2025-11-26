@@ -14,3 +14,4 @@ export class MakeTeacherDobNullable1732515513000 implements MigrationInterface {
         await queryRunner.query(`ALTER TABLE "teachers" ALTER COLUMN "dob" SET NOT NULL`);
     }
 }
+

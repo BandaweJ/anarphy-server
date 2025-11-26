@@ -15,7 +15,6 @@ import { CreateBillDto } from 'src/finance/dtos/bills.dto';
 import { BillsEntity } from 'src/finance/entities/bills.entity';
 import { StudentsEntity } from 'src/profiles/entities/students.entity';
 import { EnrolEntity } from 'src/enrolment/entities/enrol.entity';
-import { BalancesEntity } from 'src/finance/entities/balances.entity';
 import { SanitizeAmount } from '../decorators/sanitize-amount.decorator';
 
 /**
@@ -86,11 +85,6 @@ export class CreateInvoiceDto {
   // Removed @ValidateNested and @Type to allow full bill objects from frontend
   // The service will handle validation and transformation
   bills?: CreateBillDto[] | BillsEntity[];
-
-  @ApiProperty({ description: 'Balance brought forward entity', required: false })
-  @IsOptional()
-  @IsObject()
-  balanceBfwd?: BalancesEntity;
 
   @ApiProperty({ description: 'Total bill amount (calculated automatically if not provided)', required: false })
   @IsOptional()

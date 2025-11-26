@@ -1,6 +1,5 @@
 /* eslint-disable prettier/prettier */
 import { EnrolEntity } from 'src/enrolment/entities/enrol.entity';
-import { BalancesEntity } from 'src/finance/entities/balances.entity';
 import { BillsEntity } from 'src/finance/entities/bills.entity';
 import { StudentsEntity } from 'src/profiles/entities/students.entity';
 import {
@@ -95,12 +94,6 @@ export class InvoiceEntity {
 
   @ManyToOne(() => StudentsEntity, (student) => student.invoices)
   student: StudentsEntity;
-
-  // One-to-One relationship with BalancesEntity
-
-  @OneToOne(() => BalancesEntity, (balanceBfwd) => balanceBfwd.invoice)
-  @JoinColumn({ name: 'balanceId' }) // Foreign key column in the invoices table
-  balanceBfwd: BalancesEntity; //balance Bfwd if available (will eventually phase out)
 
   // One-to-One relationship with EnrolEntity
   @OneToOne(() => EnrolEntity, (enrol) => enrol.invoice)

@@ -16,6 +16,13 @@ export class CreateParentsDto {
   @IsEmail()
   email: string;
 
+  @ApiProperty({ required: false })
+  @IsString()
+  @IsOptional()
+  @MaxLength(30)
+  @MinLength(2)
+  name?: string;
+
   @ApiProperty()
   @IsString()
   @MaxLength(30)
@@ -30,11 +37,11 @@ export class CreateParentsDto {
   @IsString()
   title: string;
 
-  @ApiProperty()
+  @ApiProperty({ required: false })
   @IsString()
   @IsOptional()
   // @MinLength(10)
-  idnumber: string;
+  idnumber?: string;
 
   @ApiProperty()
   @IsString()

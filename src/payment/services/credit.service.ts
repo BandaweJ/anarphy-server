@@ -117,9 +117,13 @@ export class CreditService {
 
     let totalInvoiceOverpaymentCredits = 0;
     for (const invoice of studentInvoices) {
+      // IMPORTANT:
+      // - invoice.totalBill already includes the effect of exemptions
+      //   (gross fees - exemptions + balanceBfwd)
+      // - invoice.exemptedAmount is stored separately for reporting
+      // Do NOT subtract exemptions again here.
       const totalBill = Number(invoice.totalBill || 0);
-      const exemptedAmount = Number(invoice.exemptedAmount || 0);
-      const netBill = totalBill - exemptedAmount;
+      const netBill = totalBill;
 
       const receiptAllocations = invoice.allocations || [];
       const creditAllocations = invoice.creditAllocations || [];

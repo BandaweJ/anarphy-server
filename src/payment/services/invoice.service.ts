@@ -20,7 +20,6 @@ import {
   InvoiceBalanceMismatchException,
 } from '../exceptions/payment.exceptions';
 import { BillsEntity } from 'src/finance/entities/bills.entity';
-import { BalancesEntity } from 'src/finance/entities/balances.entity';
 import { InvoiceStatsModel } from 'src/finance/models/invoice-stats.model';
 import { FeesNames } from 'src/finance/models/fees-names.enum';
 import { ExemptionEntity } from 'src/exemptions/entities/exemptions.entity';
@@ -103,15 +102,10 @@ export class InvoiceService {
     const enrol = await this.enrolmentService.getCurrentEnrollment(
       studentNumber,
     );
-    const balanceBfwd = await this.financeService.findStudentBalance(
-      studentNumber,
-    );
-
     const invoice = new InvoiceEntity();
     invoice.student = student;
     invoice.enrol = enrol;
     invoice.bills = bills;
-    invoice.balanceBfwd = balanceBfwd;
     invoice.exemption = studentExemption || null;
     invoice.exemptedAmount = this._calculateExemptionAmount(invoice);
     invoice.amountPaidOnInvoice = payments.reduce(
@@ -135,10 +129,6 @@ export class InvoiceService {
     num: number,
     year: number,
   ): Promise<InvoiceEntity> {
-    const balanceBfwd = await this.financeService.findStudentBalance(
-      studentNumber,
-    );
-
     const student = await this.resourceById.getStudentByStudentNumber(
       studentNumber,
     );
@@ -170,7 +160,6 @@ export class InvoiceService {
     newInv.status = InvoiceStatus.Pending;
     newInv.exemptedAmount = 0;
     newInv.isVoided = false;
-    newInv.balanceBfwd = balanceBfwd;
 
     return newInv;
   }
@@ -387,7 +376,6 @@ export class InvoiceService {
             .createQueryBuilder(InvoiceEntity, 'invoice')
             .leftJoinAndSelect('invoice.student', 'student')
             .leftJoinAndSelect('invoice.enrol', 'enrol')
-            .leftJoinAndSelect('invoice.balanceBfwd', 'balanceBfwd')
             .leftJoinAndSelect('invoice.bills', 'bills')
             .leftJoinAndSelect('bills.fees', 'fees')
             .leftJoinAndSelect('invoice.exemption', 'exemption')
@@ -416,14 +404,6 @@ export class InvoiceService {
             let totalPaymentsOnInvoice = Number(
               invoiceToSave.amountPaidOnInvoice || 0,
             );
-
-            const balanceBfwdAmount = invoiceToSave.balanceBfwd
-              ? Number(invoiceToSave.balanceBfwd.amount)
-              : 0;
-
-            if (balanceBfwdAmount > 0) {
-              invoiceToSave.totalBill += balanceBfwdAmount;
-            }
 
             const creditAllocationsForExisting: CreditInvoiceAllocationEntity[] =
               [];
@@ -462,11 +442,6 @@ export class InvoiceService {
             invoiceToSave.totalBill = calculatedNetTotalBill;
             invoiceToSave.amountPaidOnInvoice = 0;
             invoiceToSave.isVoided = false; // Explicitly set to false for new invoices
-
-            if (invoice.balanceBfwd && Number(invoice.balanceBfwd.amount) > 0) {
-              invoiceToSave.balanceBfwd = invoice.balanceBfwd;
-              invoiceToSave.totalBill += Number(invoice.balanceBfwd.amount);
-            }
 
             await this.applyStudentCreditToInvoice(
               invoiceToSave,
@@ -515,7 +490,6 @@ export class InvoiceService {
               relations: [
                 'student',
                 'enrol',
-                'balanceBfwd',
                 'bills',
                 'bills.fees',
                 'exemption',
@@ -699,17 +673,6 @@ export class InvoiceService {
                 },
               );
             }
-          }
-
-          if (
-            !foundInvoice &&
-            invoice.balanceBfwd &&
-            Number(invoice.balanceBfwd.amount) > 0
-          ) {
-            await this.financeService.deleteBalance(
-              invoice.balanceBfwd,
-              transactionalEntityManager,
-            );
           }
 
           // Use the final invoice (after balance update) for logging and return
@@ -1057,7 +1020,7 @@ export class InvoiceService {
 
     const invoicesToUpdate = await this.invoiceRepository.find({
       where: { student: { studentNumber } },
-      relations: ['bills', 'bills.fees', 'balanceBfwd'],
+      relations: ['bills', 'bills.fees'],
     });
 
     for (const invoice of invoicesToUpdate) {
@@ -1099,7 +1062,7 @@ export class InvoiceService {
       .createQueryBuilder('invoice')
       .leftJoinAndSelect('invoice.student', 'student')
       .leftJoinAndSelect('invoice.enrol', 'enrol')
-      .leftJoinAndSelect('invoice.balanceBfwd', 'balanceBfwd')
+      // balanceBfwd relationship removed for new-school setup
       .leftJoinAndSelect('invoice.bills', 'bills')
       .leftJoinAndSelect('bills.fees', 'fees')
       .leftJoinAndSelect('invoice.exemption', 'exemption')
@@ -1215,7 +1178,7 @@ export class InvoiceService {
       relations: [
         'student',
         'enrol',
-        'balanceBfwd',
+        // 'balanceBfwd',
         'bills',
         'bills.fees',
         'exemption',
@@ -1232,7 +1195,7 @@ export class InvoiceService {
       relations: [
         'student',
         'enrol',
-        'balanceBfwd',
+        // 'balanceBfwd',
         'bills',
         'bills.fees',
         'exemption',
@@ -1249,7 +1212,7 @@ export class InvoiceService {
       relations: [
         'student',
         'enrol',
-        'balanceBfwd',
+        // 'balanceBfwd',
         'bills',
         'bills.fees',
         'exemption',
@@ -1266,7 +1229,7 @@ export class InvoiceService {
       relations: [
         'student',
         'enrol',
-        'balanceBfwd',
+        // 'balanceBfwd',
         'bills',
         'bills.fees',
         'exemption',
@@ -1282,7 +1245,7 @@ export class InvoiceService {
       relations: [
         'student',
         'enrol',
-        'balanceBfwd',
+        // 'balanceBfwd',
         'bills',
         'bills.fees',
         'exemption',
@@ -1302,7 +1265,7 @@ export class InvoiceService {
       relations: [
         'student',
         'enrol',
-        'balanceBfwd',
+        // 'balanceBfwd',
         'bills',
         'bills.fees',
         'exemption',
@@ -1338,7 +1301,7 @@ export class InvoiceService {
   ): Promise<InvoiceStatsModel[]> {
     const invoices = await this.invoiceRepository.find({
       where: { enrol: { num, year } },
-      relations: ['student', 'enrol', 'balanceBfwd', 'bills', 'bills.fees'],
+      relations: ['student', 'enrol', 'bills', 'bills.fees'],
     });
 
     const totals = [
@@ -1761,7 +1724,6 @@ export class InvoiceService {
     const tableEndY = this.drawTable(
       doc,
       items,
-      invoiceData.balanceBfwd,
       tableStartX,
       tableStartY,
       columnWidths,
@@ -1961,10 +1923,7 @@ export class InvoiceService {
 
     const exemptedAmount = this._calculateExemptionAmount(invoice);
     const netBill = Math.max(0, grossBill - exemptedAmount);
-    const balanceBfwdAmount = invoice.balanceBfwd
-      ? Number(invoice.balanceBfwd.amount)
-      : 0;
-    const totalBill = netBill + balanceBfwdAmount;
+    const totalBill = netBill;
 
     let receiptAllocations = 0;
     let creditAllocations = 0;
@@ -2514,9 +2473,16 @@ export class InvoiceService {
       return;
     }
 
+    // IMPORTANT:
+    // - invoice.totalBill already represents the NET bill:
+    //   (gross fees - exemptions) + balanceBfwd
+    // - invoice.exemptedAmount stores the exemption amount separately
+    //   for reporting/visibility only.
+    // Therefore, we MUST NOT subtract exemptedAmount again here, otherwise
+    // the exemption would be applied twice.
     const totalBill = Number(freshInvoice.totalBill || 0);
-    const exemptedAmount = Number(freshInvoice.exemptedAmount || 0);
-    const netBill = totalBill - exemptedAmount;
+    const netBill = totalBill;
+    const exemptedAmountForLog = Number(freshInvoice.exemptedAmount || 0);
 
     // Sum all receipt allocations
     const receiptAllocations = freshInvoice.allocations || [];
@@ -3004,10 +2970,13 @@ export class InvoiceService {
       return false;
     }
 
+    // IMPORTANT:
+    // - invoice.totalBill is already net of exemptions (see calculateInvoiceBalance)
+    // - invoice.exemptedAmount is informational
+    // Do NOT subtract exemptedAmount again here.
     const totalBill = Number(freshInvoice.totalBill || 0);
-    const exemptedAmount = Number(freshInvoice.exemptedAmount || 0);
-    const netBill = totalBill - exemptedAmount; // Net amount due after exemptions
-    
+    const netBill = totalBill; // Net amount due (already after exemptions)
+
     // Calculate actual amount paid from allocations (not from stored amountPaidOnInvoice)
     const receiptAllocations = freshInvoice.allocations || [];
     const creditAllocations = freshInvoice.creditAllocations || [];
@@ -3027,26 +2996,6 @@ export class InvoiceService {
     if (overpayment <= 0.01) {
       return false; // No correction needed
     }
-
-    logStructured(
-      this.logger,
-      'warn',
-      'invoice.correctOverpayment',
-      'Correcting invoice with overpayment detected',
-      {
-        invoiceNumber: freshInvoice.invoiceNumber,
-        invoiceId: freshInvoice.id,
-        studentNumber,
-        totalBill,
-        exemptedAmount,
-        netBill,
-        actualAmountPaid,
-        storedAmountPaid: Number(freshInvoice.amountPaidOnInvoice || 0),
-        overpayment,
-        receiptAllocationsCount: receiptAllocations.length,
-        creditAllocationsCount: creditAllocations.length,
-      },
-    );
 
     // Step 1: Update amountPaidOnInvoice to reflect what was actually paid towards the invoice
     // For overpayments, amountPaidOnInvoice should equal totalBill (not the overpayment amount)
@@ -3322,7 +3271,6 @@ export class InvoiceService {
   private drawTable(
     doc: PDFKit.PDFDocument,
     data: BillsEntity[],
-    balanceBfwd: BalancesEntity,
     startX: number,
     startY: number,
     columnWidths: number[],
@@ -3367,56 +3315,6 @@ export class InvoiceService {
 
     doc.fillColor(textColor);
     y += headerHeight;
-
-    if (balanceBfwd && balanceBfwd.amount > 0) {
-      const totalRowWidth = columnWidths.reduce((a, b) => a + b, 0);
-
-      doc
-        .rect(startX, y, totalRowWidth, rowHeight)
-        .fillOpacity(0.05)
-        .fill('#ff9800')
-        .fillOpacity(1.0);
-      doc.rect(startX, y, 3, rowHeight).fill('#ff9800');
-
-      doc.font(font).fontSize(fontSize).fillColor(textColor);
-
-      const bfwdDate = this.formatDate(balanceBfwd.dateCreated);
-      doc.text(
-        `Balance Brought Forward`,
-        startX + padding,
-        y + 5,
-        {
-          width: columnWidths[0] - 2 * padding,
-          align: 'left',
-        },
-      );
-      doc
-        .fontSize(9)
-        .fillColor('#7f8c8d')
-        .font('Helvetica-Oblique')
-        .text(`as at ${bfwdDate}`, startX + padding, y + 18, {
-          width: columnWidths[0] - 2 * padding,
-          align: 'left',
-        });
-
-      doc
-        .font(font)
-        .fontSize(fontSize)
-        .fillColor(textColor)
-        .text(this.formatCurrency(balanceBfwd.amount), startX + columnWidths[0] + padding, y + rowHeight / 2 - fontSize / 2, {
-          width: columnWidths[1] - 2 * padding,
-          align: amountAlign,
-        });
-
-      doc
-        .strokeColor(borderColor)
-        .lineWidth(1)
-        .moveTo(startX, y + rowHeight)
-        .lineTo(startX + totalRowWidth, y + rowHeight)
-        .stroke();
-
-      y += rowHeight;
-    }
 
     doc.font(font).fontSize(fontSize).fillColor(textColor);
 

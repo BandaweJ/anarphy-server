@@ -19,8 +19,6 @@ import { ROLES } from 'src/auth/models/roles.enum';
 import { FeesNames } from './models/fees-names.enum';
 import { EnrolmentService } from 'src/enrolment/enrolment.service';
 import { EnrolEntity } from 'src/enrolment/entities/enrol.entity';
-import { BalancesEntity } from './entities/balances.entity';
-import { CreateBalancesDto } from './dtos/balances.dto';
 // import { profile } from 'console';
 import { CreateBillDto } from './dtos/bills.dto';
 
@@ -30,8 +28,6 @@ export class FinanceService {
   constructor(
     private enrolmentService: EnrolmentService,
 
-    @InjectRepository(BalancesEntity)
-    private balancesRepository: Repository<BalancesEntity>,
 
     @InjectRepository(FeesEntity)
     private feesRepository: Repository<FeesEntity>,
@@ -315,74 +311,4 @@ export class FinanceService {
     return uniqueStudentsNotBilled;
   }
 
-  async findStudentBalance(studentNumber: string): Promise<BalancesEntity> {
-    const balance = await this.balancesRepository.findOne({
-      where: {
-        studentNumber,
-      },
-    });
-
-    if (!balance) {
-      const b = await this.balancesRepository.create();
-      b.amount = 0;
-      b.studentNumber = studentNumber;
-      return await this.balancesRepository.save(b);
-    }
-    return balance;
-  }
-
-  async createBalance(
-    createBalanceDto: CreateBalancesDto,
-    profile: TeachersEntity,
-  ): Promise<BalancesEntity> {
-    const { studentNumber } = createBalanceDto;
-
-    const savedBalance = await this.balancesRepository.findOne({
-      where: {
-        studentNumber,
-      },
-    });
-
-    if (savedBalance) {
-      // throw new NotImplementedException(
-      //   'Balance for this student was already set',
-      // );
-      return await this.balancesRepository.save({
-        ...savedBalance,
-        ...createBalanceDto,
-      });
-    }
-
-    return await this.balancesRepository.save({
-      ...createBalanceDto,
-    });
-  }
-
-  async updateBalance(
-    studentNumber: string,
-    amount: number,
-  ): Promise<BalancesEntity> {
-    const savedBalance = await this.balancesRepository.findOne({
-      where: {
-        studentNumber,
-      },
-    });
-    if (!savedBalance) {
-      throw new NotFoundException('Balance for this student was not found');
-    }
-
-    savedBalance.amount = amount;
-
-    return await this.balancesRepository.save({
-      ...savedBalance,
-    });
-  }
-
-  // Modified to accept EntityManager
-  async deleteBalance(
-    balance: BalancesEntity,
-    manager: EntityManager, // Changed name to 'manager'
-  ): Promise<void> {
-    await manager.delete(BalancesEntity, balance.id); // Use manager and entity
-  }
 }

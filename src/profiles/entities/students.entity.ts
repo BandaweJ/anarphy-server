@@ -32,29 +32,29 @@ export class StudentsEntity extends BaseEntity {
   @Column()
   surname: string;
 
-  @Column({ default: Timestamp })
-  dob: Date;
+  @Column({ type: 'timestamp', nullable: true })
+  dob: Date | null;
 
   @Column()
   gender: string;
 
   @Column({ nullable: true })
-  idnumber: string;
+  idnumber: string | null;
 
-  @Column({ default: Timestamp })
+  @Column({ type: 'timestamp', default: () => 'CURRENT_TIMESTAMP' })
   dateOfJoining: Date;
 
-  @Column({ default: '' })
-  cell: string;
+  @Column({ nullable: true, default: '' })
+  cell: string | null;
 
-  @Column({ default: '' })
-  email: string;
+  @Column({ nullable: true, default: '' })
+  email: string | null;
 
-  @Column()
-  address: string;
+  @Column({ nullable: true })
+  address: string | null;
 
-  @Column()
-  prevSchool: string;
+  @Column({ nullable: true })
+  prevSchool: string | null;
 
   @Column({ default: 'student' })
   role: string;

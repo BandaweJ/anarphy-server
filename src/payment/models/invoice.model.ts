@@ -11,7 +11,6 @@
  */
 import { BillsEntity } from 'src/finance/entities/bills.entity';
 import { StudentsEntity } from 'src/profiles/entities/students.entity';
-import { BalancesEntity } from 'src/finance/entities/balances.entity';
 import { EnrolEntity } from 'src/enrolment/entities/enrol.entity';
 
 /* eslint-disable prettier/prettier */
@@ -19,8 +18,6 @@ import { EnrolEntity } from 'src/enrolment/entities/enrol.entity';
 export class Invoice {
   constructor(
     public totalBill: number,
-
-    public balanceBfwd: BalancesEntity,
     public student: StudentsEntity,
     public bills: BillsEntity[],
 

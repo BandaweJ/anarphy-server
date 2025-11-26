@@ -63,6 +63,24 @@ export const PERMISSIONS = {
     MANAGE_ROLES: 'users.manage.roles',
   },
 
+  // Parents Management Permissions
+  PARENTS: {
+    VIEW: 'parents.view',
+    CREATE: 'parents.create',
+    EDIT: 'parents.edit',
+    DELETE: 'parents.delete',
+  },
+
+  // Students Management Permissions
+  STUDENTS: {
+    VIEW: 'students.view',
+    CREATE: 'students.create',
+    EDIT: 'students.edit',
+    DELETE: 'students.delete',
+    VIEW_OWN: 'students.view.own',
+    EDIT_OWN: 'students.edit.own',
+  },
+
   // System Administration Permissions
   SYSTEM: {
     VIEW_SETTINGS: 'system.view.settings',
