@@ -15,7 +15,6 @@ import { CreateParentsDto } from '../dtos/createParents.dto';
 import { UpdateParentDto } from '../dtos/updateParent.dto';
 import { ResourceByIdService } from '../../resource-by-id/resource-by-id.service';
 import { TeachersEntity } from '../entities/teachers.entity';
-import { StudentsEntity } from '../entities/students.entity';
 import { ROLES } from '../../auth/models/roles.enum';
 
 @Injectable()

@@ -1,9 +1,15 @@
 /* eslint-disable prettier/prettier */
-import { Injectable, CanActivate, ExecutionContext, ForbiddenException } from '@nestjs/common';
+import {
+  Injectable,
+  CanActivate,
+  ExecutionContext,
+  ForbiddenException,
+} from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { HAS_PERMISSIONS_KEY } from '../decorators/has-permissions.decorator';
 import { RolesPermissionsService } from '../services/roles-permissions.service';
 import { AccountsEntity } from '../entities/accounts.entity';
+import { ROLES } from '../models/roles.enum';
 
 @Injectable()
 export class PermissionsGuard implements CanActivate {
@@ -33,7 +39,12 @@ export class PermissionsGuard implements CanActivate {
       throw new ForbiddenException('User not authenticated');
     }
 
-    // 3. Get the account ID from the user object
+    // 3. Allow system admin to bypass fine-grained permission checks
+    if ((user as any).role === ROLES.admin) {
+      return true;
+    }
+
+    // 4. Get the account ID from the user object
     // The JWT strategy attaches accountId to the user profile (see jwt.strategy.ts line 95)
     const accountId = (user as any).accountId;
     
@@ -41,7 +52,7 @@ export class PermissionsGuard implements CanActivate {
       throw new ForbiddenException('User account ID not found');
     }
 
-    // 4. Check if the user has all required permissions
+    // 5. Check if the user has all required permissions
     for (const permission of requiredPermissions) {
       const hasPermission = await this.rolesPermissionsService.hasPermission(
         accountId,

@@ -3,6 +3,7 @@ import {
   Injectable,
   NotFoundException,
   NotImplementedException,
+  BadRequestException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { MarksEntity } from './entities/marks.entity';
@@ -20,6 +21,7 @@ import { EnrolmentService } from 'src/enrolment/enrolment.service';
 import { CommentDto } from './dtos/comment.dto';
 import { TeacherCommentEntity } from './entities/teacher-comments.entity';
 import { MarksProgressModel } from './models/marks-progress.model';
+import { StudentsService } from 'src/profiles/students/students.service';
 
 @Injectable()
 export class MarksService {
@@ -32,6 +34,7 @@ export class MarksService {
     private subjectsRepository: Repository<SubjectsEntity>,
     private resourceById: ResourceByIdService,
     private enrolmentService: EnrolmentService,
+    private studentsService: StudentsService,
   ) {}
 
   async createSubject(

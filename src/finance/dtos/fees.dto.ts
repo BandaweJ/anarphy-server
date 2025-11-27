@@ -17,11 +17,11 @@ export class CreateFeesDto {
 
   @ApiProperty()
   @IsString()
-  @IsNotEmpty()
+  @IsOptional()
   description?: string;
 
   @ApiProperty()
   @IsString()
-  @IsOptional()
+  @IsNotEmpty()
   name: FeesNames;
 }

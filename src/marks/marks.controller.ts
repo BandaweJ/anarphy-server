@@ -22,6 +22,7 @@ import { CommentDto } from './dtos/comment.dto';
 import { PermissionsGuard } from '../auth/guards/permissions.guard';
 import { HasPermissions } from '../auth/decorators/has-permissions.decorator';
 import { PERMISSIONS } from '../auth/models/permissions.constants';
+import { ApiOperation, ApiParam, ApiResponse } from '@nestjs/swagger';
 
 @Controller('marks')
 @UseGuards(AuthGuard(), PermissionsGuard)
