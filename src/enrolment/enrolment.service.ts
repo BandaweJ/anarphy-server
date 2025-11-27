@@ -639,6 +639,26 @@ export class EnrolmentService {
     return currentEnrollment;
   }
 
+  /**
+   * Finds the most recent (latest year/term) enrollment for a student.
+   * This is useful for allowing operations (like pre-payments) for students
+   * who are enrolled in an upcoming term but not yet in the current term.
+   */
+  async getLatestEnrollmentForStudent(
+    studentNumber: string,
+  ): Promise<EnrolEntity | null> {
+    const latestEnrol = await this.enrolmentRepository.findOne({
+      where: { student: { studentNumber } },
+      order: {
+        year: 'DESC',
+        num: 'DESC',
+      },
+      relations: ['student'],
+    });
+
+    return latestEnrol || null;
+  }
+
   async isNewcomer(studentNumber: string): Promise<boolean> {
     try {
       const enrolCount = await this.enrolmentRepository.count({

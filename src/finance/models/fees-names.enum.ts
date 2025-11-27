@@ -2,7 +2,7 @@
 export enum FeesNames {
   oLevelApplicationFee = 'oLevelApplicationFee',
   aLevelApplicationFee = 'aLevelApplicationFee',
-  deskFee = 'deskFee',
+  admissionFee = 'admissionFee',
   oLevelTuitionDay = 'oLevelTuitionDay',
   aLevelTuitionDay = 'aLevelTuitionDay',
   oLevelTuitionBoarder = 'oLevelTuitionBoarder',

@@ -527,7 +527,6 @@ export class InvoiceService {
               relations: [
                 'student',
                 'enrol',
-                'balanceBfwd',
                 'bills',
                 'bills.fees',
                 'exemption',
@@ -1044,7 +1043,6 @@ export class InvoiceService {
     const relations: (keyof InvoiceEntity | string)[] = [
       'student',
       'enrol',
-      'balanceBfwd',
       'bills',
       'bills.fees',
       'exemption',
@@ -1284,7 +1282,6 @@ export class InvoiceService {
       relations: [
         'student',
         'enrol',
-        'balanceBfwd',
         'bills',
         'bills.fees',
         'exemption',
@@ -1352,7 +1349,7 @@ export class InvoiceService {
           case FeesNames.developmentFee:
             addAmount('development', Number(bill.fees.amount), invoice.enrol.name);
             break;
-          case FeesNames.deskFee:
+          case FeesNames.admissionFee:
             addAmount('desk', Number(bill.fees.amount), invoice.enrol.name);
             break;
           case FeesNames.alevelScienceFee:
@@ -1928,16 +1925,33 @@ export class InvoiceService {
     let receiptAllocations = 0;
     let creditAllocations = 0;
 
+    // Get set of receipt IDs that have direct allocations to this invoice
+    // This prevents double-counting when a receipt created both an allocation and a credit
+    const receiptIdsWithDirectAllocations = new Set<number>();
+    
     if (invoice.allocations && Array.isArray(invoice.allocations)) {
       receiptAllocations = invoice.allocations.reduce(
-        (sum, alloc) => sum + Number(alloc.amountApplied || 0),
+        (sum, alloc) => {
+          // Track receipt IDs that have direct allocations
+          if (alloc.receipt?.id) {
+            receiptIdsWithDirectAllocations.add(alloc.receipt.id);
+          }
+          return sum + Number(alloc.amountApplied || 0);
+        },
         0,
       );
     }
 
     if (invoice.creditAllocations && Array.isArray(invoice.creditAllocations)) {
       creditAllocations = invoice.creditAllocations.reduce(
-        (sum, alloc) => sum + Number(alloc.amountApplied || 0),
+        (sum, alloc) => {
+          // If this credit allocation has a relatedReceiptId and that receipt
+          // already has a direct allocation to this invoice, skip it to avoid double-counting
+          if (alloc.relatedReceiptId && receiptIdsWithDirectAllocations.has(alloc.relatedReceiptId)) {
+            return sum; // Don't count this credit allocation
+          }
+          return sum + Number(alloc.amountApplied || 0);
+        },
         0,
       );
     }
@@ -2465,7 +2479,7 @@ export class InvoiceService {
       InvoiceEntity,
       {
         where: { id: invoice.id },
-        relations: ['allocations', 'creditAllocations'],
+        relations: ['allocations', 'creditAllocations', 'allocations.receipt'],
       },
     );
 
@@ -2484,21 +2498,35 @@ export class InvoiceService {
     const netBill = totalBill;
     const exemptedAmountForLog = Number(freshInvoice.exemptedAmount || 0);
 
-    // Sum all receipt allocations
+    // Sum all receipt allocations (direct allocations from receipts)
     const receiptAllocations = freshInvoice.allocations || [];
     const totalReceiptAllocated = receiptAllocations.reduce(
       (sum, alloc) => sum + Number(alloc.amountApplied || 0),
       0,
     );
 
-    // Sum all credit allocations
-    const creditAllocations = freshInvoice.creditAllocations || [];
-    const totalCreditAllocated = creditAllocations.reduce(
-      (sum, alloc) => sum + Number(alloc.amountApplied || 0),
-      0,
-    );
+    // Get set of receipt IDs that already have direct allocations to this invoice
+    // This prevents double-counting when a receipt created both an allocation and a credit
+    const receiptIdsWithDirectAllocations = new Set<number>();
+    for (const alloc of receiptAllocations) {
+      if (alloc.receipt?.id) {
+        receiptIdsWithDirectAllocations.add(alloc.receipt.id);
+      }
+    }
 
-    // Total paid = receipt allocations + credit allocations
+    // Sum credit allocations, but EXCLUDE credits that came from receipts
+    // that already have direct allocations to this invoice (to prevent double-counting)
+    const creditAllocations = freshInvoice.creditAllocations || [];
+    const totalCreditAllocated = creditAllocations.reduce((sum, alloc) => {
+      // If this credit allocation has a relatedReceiptId and that receipt
+      // already has a direct allocation to this invoice, skip it to avoid double-counting
+      if (alloc.relatedReceiptId && receiptIdsWithDirectAllocations.has(alloc.relatedReceiptId)) {
+        return sum; // Don't count this credit allocation
+      }
+      return sum + Number(alloc.amountApplied || 0);
+    }, 0);
+
+    // Total paid = receipt allocations + credit allocations (excluding double-counted ones)
     const totalPaid = totalReceiptAllocated + totalCreditAllocated;
     const calculatedBalance = netBill - totalPaid;
 
@@ -3458,7 +3486,7 @@ export class InvoiceService {
         return 'A Level Day Tuition';
       case FeesNames.alevelScienceFee:
         return 'A Level Science Fee';
-      case FeesNames.deskFee:
+      case FeesNames.admissionFee:
         return 'Desk Fee';
       case FeesNames.developmentFee:
         return 'Development Fee';

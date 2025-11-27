@@ -399,7 +399,15 @@ export class ReceiptService {
       );
     }
 
-    const enrol = await this.enrolmentService.getCurrentEnrollment(studentNumber);
+    // Prefer current enrolment; if none, fall back to the latest enrolment
+    // so that we can accept payments for students enrolled in upcoming terms.
+    let enrol = await this.enrolmentService.getCurrentEnrollment(studentNumber);
+    if (!enrol) {
+      enrol = await this.enrolmentService.getLatestEnrollmentForStudent(
+        studentNumber,
+      );
+    }
+
     if (!enrol) {
       throw new StudentNotEnrolledException(studentNumber);
     }
@@ -461,6 +469,7 @@ export class ReceiptService {
       student: student,
       receiptNumber: await this.generateReceiptNumber(),
       servedBy: profile.email,
+      paymentDate: new Date(),
       enrol: enrol,
       isVoided: false,
       voidedAt: null,

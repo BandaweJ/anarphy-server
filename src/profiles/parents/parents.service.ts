@@ -190,21 +190,21 @@ export class ParentsService {
   async getAllParents(
     profile: TeachersEntity | StudentsEntity | ParentsEntity,
   ): Promise<ParentsEntity[]> {
-    // Authorization check - Only admin, director, auditor can view all parents
+    // Authorization check - Only admin, director, auditor, reception can view all parents
     switch (profile.role) {
       case ROLES.admin:
       case ROLES.director:
-      case ROLES.auditor: {
+      case ROLES.auditor:
+      case ROLES.reception: {
         // Allowed to access parent list
         break;
       }
       case ROLES.hod:
-      case ROLES.reception:
       case ROLES.teacher:
       case ROLES.parent:
       case ROLES.student: {
         throw new UnauthorizedException(
-          'Only admins, directors, and auditors can access parent list',
+          'Only admins, directors, auditors, and reception can access parent list',
         );
       }
       default:
@@ -229,20 +229,20 @@ export class ParentsService {
     createParentDto: CreateParentsDto,
     profile: TeachersEntity | StudentsEntity | ParentsEntity,
   ): Promise<ParentsEntity> {
-    // Authorization check - Only admin, director, auditor can create parents
+    // Authorization check - Only admin, director, auditor, reception can create parents
     switch (profile.role) {
       case ROLES.admin:
       case ROLES.director:
-      case ROLES.auditor: {
+      case ROLES.auditor:
+      case ROLES.reception: {
         // Allowed to create parents
         break;
       }
       case ROLES.hod:
-      case ROLES.reception:
       case ROLES.teacher:
       case ROLES.parent:
       case ROLES.student: {
-        throw new UnauthorizedException('Only admins, directors, and auditors can create parents');
+        throw new UnauthorizedException('Only admins, directors, auditors, and reception can create parents');
       }
       default:
         throw new UnauthorizedException('Insufficient permissions');
@@ -282,20 +282,20 @@ export class ParentsService {
     email: string,
     profile: TeachersEntity | StudentsEntity | ParentsEntity,
   ): Promise<{ affected: number; message: string }> {
-    // Authorization check - Only admins and directors can delete
+    // Authorization check - Only admins, directors, and reception can delete
     switch (profile.role) {
       case ROLES.admin:
-      case ROLES.director: {
+      case ROLES.director:
+      case ROLES.reception: {
         // Allowed to delete parents
         break;
       }
       case ROLES.auditor:
       case ROLES.hod:
-      case ROLES.reception:
       case ROLES.teacher:
       case ROLES.parent:
       case ROLES.student: {
-        throw new UnauthorizedException('Only admins and directors can delete parents');
+        throw new UnauthorizedException('Only admins, directors, and reception can delete parents');
       }
       default:
         throw new UnauthorizedException('Insufficient permissions');
@@ -365,8 +365,9 @@ export class ParentsService {
       switch (profile.role) {
         case ROLES.admin:
         case ROLES.director:
-        case ROLES.auditor: {
-          // Admin, director, auditor can update any parent
+        case ROLES.auditor:
+        case ROLES.reception: {
+          // Admin, director, auditor, reception can update any parent
           break;
         }
         case ROLES.parent: {
@@ -378,7 +379,6 @@ export class ParentsService {
           break;
         }
         case ROLES.hod:
-        case ROLES.reception:
         case ROLES.teacher:
         case ROLES.student: {
           // Other roles cannot update parent records

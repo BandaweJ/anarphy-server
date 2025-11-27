@@ -294,10 +294,7 @@ export class FinancialValidationService {
       this.throwReceiptValidation('Payment method is required', receipt);
     }
 
-    // 7. Validate description
-    if (!receipt.description || receipt.description.trim() === '') {
-      this.throwReceiptValidation('Receipt description is required', receipt);
-    }
+    // 7. Description is now optional - no validation required
 
     // 8. Validate served by
     if (!receipt.servedBy || receipt.servedBy.trim() === '') {

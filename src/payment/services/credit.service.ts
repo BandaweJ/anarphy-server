@@ -111,7 +111,7 @@ export class CreditService {
       InvoiceEntity,
       {
         where: { student: { studentNumber }, isVoided: false },
-        relations: ['allocations', 'creditAllocations'],
+        relations: ['allocations', 'allocations.receipt', 'creditAllocations'],
       },
     );
 
@@ -127,14 +127,35 @@ export class CreditService {
 
       const receiptAllocations = invoice.allocations || [];
       const creditAllocations = invoice.creditAllocations || [];
+      
+      // Get set of receipt IDs that have direct allocations to this invoice
+      // This prevents double-counting when a receipt created both an allocation and a credit
+      const receiptIdsWithDirectAllocations = new Set<number>();
       const totalReceiptAllocated = receiptAllocations.reduce(
-        (sum, alloc) => sum + Number(alloc.amountApplied || 0),
+        (sum, alloc) => {
+          // Track receipt IDs that have direct allocations
+          if (alloc.receipt?.id) {
+            receiptIdsWithDirectAllocations.add(alloc.receipt.id);
+          }
+          return sum + Number(alloc.amountApplied || 0);
+        },
         0,
       );
+      
+      // Sum credit allocations, but EXCLUDE credits that came from receipts
+      // that already have direct allocations to this invoice (to prevent double-counting)
       const totalCreditAllocated = creditAllocations.reduce(
-        (sum, alloc) => sum + Number(alloc.amountApplied || 0),
+        (sum, alloc) => {
+          // If this credit allocation has a relatedReceiptId and that receipt
+          // already has a direct allocation to this invoice, skip it to avoid double-counting
+          if (alloc.relatedReceiptId && receiptIdsWithDirectAllocations.has(alloc.relatedReceiptId)) {
+            return sum; // Don't count this credit allocation
+          }
+          return sum + Number(alloc.amountApplied || 0);
+        },
         0,
       );
+      
       const totalPaid = totalReceiptAllocated + totalCreditAllocated;
 
       // If total paid exceeds net bill, the excess is credit from invoice overpayment
