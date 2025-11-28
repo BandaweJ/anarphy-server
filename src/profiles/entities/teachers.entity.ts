@@ -1,6 +1,5 @@
 /* eslint-disable prettier/prettier */
 import { AccountsEntity } from 'src/auth/entities/accounts.entity';
-import { TeacherCommentEntity } from 'src/marks/entities/teacher-comments.entity';
 import {
   Column,
   Entity,
@@ -60,6 +59,4 @@ export class TeachersEntity extends BaseEntity {
   @OneToOne(() => AccountsEntity, (account) => account.teacher)
   account: AccountsEntity;
 
-  @OneToMany(() => TeacherCommentEntity, (comments) => comments.teacher)
-  comments: TeacherCommentEntity[];
 }

@@ -159,6 +159,22 @@ export class AttendanceService {
     startDate?: string,
     endDate?: string,
   ) {
+    // Get all students enrolled in this class for this term
+    const enrolments = await this.enrolmentRepository.find({
+      where: {
+        name: className,
+        num: termNum,
+        year: year,
+      },
+      relations: ['student'],
+    });
+
+    const totalStudents = enrolments.length;
+    const enrolledStudentNumbers = new Set(
+      enrolments.map((e) => e.student.studentNumber),
+    );
+
+    // Get attendance records
     const queryBuilder = this.attendanceRepository
       .createQueryBuilder('attendance')
       .leftJoinAndSelect('attendance.student', 'student')
@@ -178,38 +194,187 @@ export class AttendanceService {
     }
 
     const attendanceRecords = await queryBuilder
-      .orderBy('attendance.date', 'DESC')
+      .orderBy('attendance.date', 'ASC')
       .addOrderBy('student.surname', 'ASC')
       .getMany();
 
-    // Transform records to match AttendanceRecord interface
-    const transformedRecords = attendanceRecords
-      .filter(record => record.student != null) // Filter out records without student
-      .map(record => ({
-        id: record.id,
-        studentNumber: record.student.studentNumber,
-        surname: record.student.surname,
-        name: record.student.name, // Student's first name
-        gender: record.student.gender,
-        present: record.present,
-        date: record.date.toISOString().split('T')[0],
-        className: record.name, // Class name from attendance.name
-        termNum: record.num,
-        year: record.year,
-        student: record.student, // Keep full student object for reference
-      }));
-
     // Group by date
-    const groupedByDate = transformedRecords.reduce((acc, record) => {
-      const dateKey = record.date;
-      if (!acc[dateKey]) {
-        acc[dateKey] = [];
+    const recordsByDate = new Map<string, typeof attendanceRecords>();
+    attendanceRecords.forEach((record) => {
+      if (!record.student) return;
+      const dateKey = record.date.toISOString().split('T')[0];
+      if (!recordsByDate.has(dateKey)) {
+        recordsByDate.set(dateKey, []);
       }
-      acc[dateKey].push(record);
-      return acc;
-    }, {});
+      recordsByDate.get(dateKey)!.push(record);
+    });
 
-    return groupedByDate;
+    // Calculate daily metrics
+    const dailyMetrics = Array.from(recordsByDate.entries())
+      .map(([date, records]) => {
+        const presentCount = records.filter((r) => r.present).length;
+        const absentCount = records.filter((r) => !r.present).length;
+        const absentStudents = records
+          .filter((r) => !r.present && r.student)
+          .map((r) => ({
+            studentNumber: r.student.studentNumber,
+            surname: r.student.surname,
+            name: r.student.name,
+            gender: r.student.gender,
+          }));
+
+        // Possible attendance is the total enrolled students
+        const possibleAttendance = totalStudents;
+        const actualAttendance = presentCount;
+        const attendanceRate =
+          possibleAttendance > 0
+            ? (actualAttendance / possibleAttendance) * 100
+            : 0;
+
+        return {
+          date,
+          possibleAttendance,
+          actualAttendance,
+          absentCount,
+          attendanceRate: Math.round(attendanceRate * 100) / 100,
+          absentStudents,
+        };
+      })
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+    // Calculate weekly summaries
+    const weeklySummaries = this.calculateWeeklySummaries(
+      dailyMetrics,
+      startDate,
+      endDate,
+    );
+
+    // Calculate trends
+    const trends = this.calculateTrends(weeklySummaries);
+
+    // Calculate overall stats
+    const totalPossibleAttendance = dailyMetrics.reduce(
+      (sum, day) => sum + day.possibleAttendance,
+      0,
+    );
+    const totalActualAttendance = dailyMetrics.reduce(
+      (sum, day) => sum + day.actualAttendance,
+      0,
+    );
+    const overallAttendanceRate =
+      totalPossibleAttendance > 0
+        ? (totalActualAttendance / totalPossibleAttendance) * 100
+        : 0;
+
+    return {
+      className,
+      termNum,
+      year,
+      reportPeriod: {
+        startDate: startDate || dailyMetrics[0]?.date || '',
+        endDate: endDate || dailyMetrics[dailyMetrics.length - 1]?.date || '',
+      },
+      totalStudents,
+      dailyMetrics,
+      weeklySummaries,
+      trends,
+      overallStats: {
+        totalPossibleAttendance,
+        totalActualAttendance,
+        overallAttendanceRate: Math.round(overallAttendanceRate * 100) / 100,
+        totalDaysMarked: dailyMetrics.length,
+      },
+    };
+  }
+
+  private calculateWeeklySummaries(
+    dailyMetrics: any[],
+    startDate?: string,
+    endDate?: string,
+  ): any[] {
+    if (dailyMetrics.length === 0) return [];
+
+    const weeks = new Map<string, any[]>();
+
+    dailyMetrics.forEach((day) => {
+      const date = new Date(day.date);
+      const weekStart = this.getWeekStart(date);
+      const weekKey = weekStart.toISOString().split('T')[0];
+
+      if (!weeks.has(weekKey)) {
+        weeks.set(weekKey, []);
+      }
+      weeks.get(weekKey)!.push(day);
+    });
+
+    const weeklySummaries = Array.from(weeks.entries())
+      .map(([weekStartDate, days], index) => {
+        const weekStart = new Date(weekStartDate);
+        const weekEnd = new Date(weekStart);
+        weekEnd.setDate(weekEnd.getDate() + 6);
+
+        const totalPossible = days.reduce(
+          (sum, day) => sum + day.possibleAttendance,
+          0,
+        );
+        const totalActual = days.reduce(
+          (sum, day) => sum + day.actualAttendance,
+          0,
+        );
+        const avgRate =
+          totalPossible > 0 ? (totalActual / totalPossible) * 100 : 0;
+
+        return {
+          weekStartDate,
+          weekEndDate: weekEnd.toISOString().split('T')[0],
+          weekNumber: index + 1,
+          totalPossibleAttendance: totalPossible,
+          totalActualAttendance: totalActual,
+          averageAttendanceRate: Math.round(avgRate * 100) / 100,
+          daysWithAttendance: days.length,
+        };
+      })
+      .sort(
+        (a, b) =>
+          new Date(a.weekStartDate).getTime() -
+          new Date(b.weekStartDate).getTime(),
+      );
+
+    return weeklySummaries;
+  }
+
+  private getWeekStart(date: Date): Date {
+    const d = new Date(date);
+    const day = d.getDay();
+    const diff = d.getDate() - day + (day === 0 ? -6 : 1); // Adjust to Monday
+    return new Date(d.setDate(diff));
+  }
+
+  private calculateTrends(weeklySummaries: any[]): any[] {
+    if (weeklySummaries.length < 2) return [];
+
+    const trends = weeklySummaries.map((week, index) => {
+      let trend: 'improving' | 'declining' | 'stable' = 'stable';
+      if (index > 0) {
+        const prevRate = weeklySummaries[index - 1].averageAttendanceRate;
+        const currentRate = week.averageAttendanceRate;
+        const diff = currentRate - prevRate;
+
+        if (diff > 2) {
+          trend = 'improving';
+        } else if (diff < -2) {
+          trend = 'declining';
+        }
+      }
+
+      return {
+        period: `Week ${week.weekNumber}`,
+        attendanceRate: week.averageAttendanceRate,
+        trend,
+      };
+    });
+
+    return trends;
   }
 
   async getStudentAttendance(

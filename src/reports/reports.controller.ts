@@ -7,6 +7,7 @@ import {
   Post,
   Res,
   UseGuards,
+  BadRequestException,
 } from '@nestjs/common';
 import { ReportsService } from './reports.service';
 import { GetUser } from 'src/auth/decorators/get-user.decorator';
@@ -16,6 +17,7 @@ import { TeachersEntity } from 'src/profiles/entities/teachers.entity';
 import { StudentsEntity } from 'src/profiles/entities/students.entity';
 import { ParentsEntity } from 'src/profiles/entities/parents.entity';
 import { HeadCommentDto } from './dtos/head-comment.dto';
+import { FormTeacherCommentDto } from './dtos/form-teacher-comment.dto';
 import { ReportsModel } from './models/reports.model';
 import { ExamType } from 'src/marks/models/examtype.enum';
 import { PermissionsGuard } from 'src/auth/guards/permissions.guard';
@@ -67,13 +69,42 @@ export class ReportsController {
     );
   }
 
-  @Post('/save/')
+  @Post('/save/head-comment')
   @HasPermissions(PERMISSIONS.REPORTS.EDIT_COMMENT)
   saveHeadComment(
     @Body() comment: HeadCommentDto,
     @GetUser() profile: TeachersEntity | StudentsEntity | ParentsEntity,
   ) {
+    // Validation will be handled by ValidationPipe, but add explicit check as fallback
+    if (!comment) {
+      throw new BadRequestException('Comment data is required');
+    }
+    if (!comment.report) {
+      throw new BadRequestException('Report data is required in comment');
+    }
+    if (!comment.comment) {
+      throw new BadRequestException('Comment text is required');
+    }
     return this.reportsService.saveHeadComment(comment, profile);
+  }
+
+  @Post('/save/form-teacher-comment')
+  @HasPermissions(PERMISSIONS.REPORTS.EDIT_COMMENT)
+  saveFormTeacherComment(
+    @Body() comment: FormTeacherCommentDto,
+    @GetUser() profile: TeachersEntity | StudentsEntity | ParentsEntity,
+  ) {
+    // Validation will be handled by ValidationPipe, but add explicit check as fallback
+    if (!comment) {
+      throw new BadRequestException('Comment data is required');
+    }
+    if (!comment.report) {
+      throw new BadRequestException('Report data is required in comment');
+    }
+    if (!comment.comment) {
+      throw new BadRequestException('Comment text is required');
+    }
+    return this.reportsService.saveFormTeacherComment(comment, profile);
   }
 
   @Get('/view/:name/:num/:year/:examType')

@@ -2,9 +2,8 @@
 import { IsString, IsNotEmpty, ValidateNested, IsObject } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ReportsModel } from '../models/reports.model';
-import { ReportModel } from '../models/report.model';
 
-export class HeadCommentDto {
+export class FormTeacherCommentDto {
   @IsString()
   @IsNotEmpty()
   comment: string;
@@ -15,3 +14,4 @@ export class HeadCommentDto {
   @IsObject()
   report: ReportsModel;
 }
+

@@ -8,7 +8,6 @@ import { MarksEntity } from './entities/marks.entity';
 import { ResourceByIdModule } from '../resource-by-id/resource-by-id.module';
 import { AuthModule } from '../auth/auth.module';
 import { EnrolmentModule } from 'src/enrolment/enrolment.module';
-import { TeacherCommentEntity } from './entities/teacher-comments.entity';
 import { ProfilesModule } from 'src/profiles/profiles.module';
 
 @Module({
@@ -20,7 +19,6 @@ import { ProfilesModule } from 'src/profiles/profiles.module';
     TypeOrmModule.forFeature([
       SubjectsEntity,
       MarksEntity,
-      TeacherCommentEntity,
     ]),
   ],
   controllers: [MarksController],

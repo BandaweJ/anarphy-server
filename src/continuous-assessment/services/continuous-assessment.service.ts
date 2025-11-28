@@ -180,19 +180,52 @@ export class ContinuousAssessmentService {
       throw new NotFoundException('Class not found');
     }
 
-    const term = await this.getCurrentTerm();
+    // Try to get current term first, but if not found, get the latest term that has enrolments for this class
+    let term = await this.getCurrentTerm();
+    
+    // If no current term, find the latest term that has enrolments for this class
+    if (!term) {
+      this.logger.log(`No current term found, looking for latest term with enrolments for class ${classEntity.name}`);
+      
+      // Get all enrolments for this class, ordered by term (most recent first)
+      const latestEnrolment = await this.enrolmentRepository.findOne({
+        where: { name: classEntity.name },
+        order: { year: 'DESC', num: 'DESC' },
+      });
+      
+      if (latestEnrolment) {
+        // Get the term for this enrolment
+        term = await this.termsRepository.findOne({
+          where: { num: latestEnrolment.num, year: latestEnrolment.year },
+        });
+        this.logger.log(`Using latest term with enrolments: ${term ? `${term.num}/${term.year}` : 'not found'}`);
+      } else {
+        // Fallback: get the most recent term overall
+        term = await this.termsRepository.findOne({
+          order: { year: 'DESC', num: 'DESC' },
+        });
+        this.logger.log(`Using most recent term overall: ${term ? `${term.num}/${term.year}` : 'not found'}`);
+      }
+    }
+    
     const enrolWhere: any = { name: classEntity.name };
     if (term) {
       enrolWhere.year = term.year;
       enrolWhere.num = term.num;
     } else {
+      // Last resort: use current year
       enrolWhere.year = new Date().getFullYear();
+      this.logger.warn(`No term found, using year ${enrolWhere.year} only`);
     }
 
+    this.logger.log(`Fetching roster for class ${classEntity.name}, term: ${term ? `${term.num}/${term.year}` : 'current year'}`);
+    
     const enrolments = await this.enrolmentRepository.find({
       where: enrolWhere,
       relations: ['student'],
     });
+
+    this.logger.log(`Found ${enrolments.length} enrolments for class ${classEntity.name} in term ${term ? `${term.num}/${term.year}` : enrolWhere.year}`);
 
     const students = enrolments
       .map((enrol) => enrol.student)
@@ -201,8 +234,11 @@ export class ContinuousAssessmentService {
 
     const studentIds = students.map((student) => student.studentNumber);
     if (studentIds.length === 0) {
+      this.logger.warn(`No students found in class ${classEntity.name} for term ${term ? `${term.num}/${term.year}` : 'current year'}`);
       return [];
     }
+    
+    this.logger.log(`Returning roster with ${students.length} students`);
 
     const { startOfDay, endOfDay } = this.getAssessmentDayRange(assessmentDate);
 

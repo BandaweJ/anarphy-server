@@ -47,7 +47,7 @@ export class StudentsController {
   @Get(':studentNumber')
   getStudent(
     @Param('studentNumber') studentNumber: string,
-    profile: TeachersEntity | ParentsEntity | StudentsEntity,
+    @GetUser() profile: TeachersEntity | ParentsEntity | StudentsEntity,
   ) {
     return this.studentsService.getStudent(studentNumber, profile);
   }

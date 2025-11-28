@@ -45,11 +45,12 @@ export class ParentsService {
       throw new NotFoundException(`Parent with email ${email} not found`);
     }
 
-    // Authorization: admin/director/auditor can view any; parent only own; students none
+    // Authorization: admin/director/auditor/reception can view any; parent only own; students none
     switch (profile.role) {
       case ROLES.admin:
       case ROLES.director:
-      case ROLES.auditor: {
+      case ROLES.auditor:
+      case ROLES.reception: {
         break;
       }
       case ROLES.parent: {

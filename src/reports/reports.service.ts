@@ -3,6 +3,7 @@ import {
   Injectable,
   InternalServerErrorException,
   NotFoundException,
+  BadRequestException,
 } from '@nestjs/common';
 import { EnrolmentService } from '../enrolment/enrolment.service';
 import { MarksService } from '../marks/marks.service';
@@ -16,11 +17,11 @@ import { SubjectSetItem } from './models/subject-set-item';
 import { InjectRepository } from '@nestjs/typeorm';
 import { ReportsEntity } from './entities/report.entity';
 import { In, Repository } from 'typeorm';
-import { TeacherCommentEntity } from 'src/marks/entities/teacher-comments.entity';
 import * as PDFDocument from 'pdfkit';
 import * as fs from 'fs';
 import { ReportsModel } from './models/reports.model';
 import { HeadCommentDto } from './dtos/head-comment.dto';
+import { FormTeacherCommentDto } from './dtos/form-teacher-comment.dto';
 import * as path from 'path';
 import { ExamType } from 'src/marks/models/examtype.enum';
 import { NotificationService } from '../notifications/services/notification.service';
@@ -35,8 +36,6 @@ export class ReportsService {
     private gradingSystemService: GradingSystemService,
     @InjectRepository(ReportsEntity)
     private reportsRepository: Repository<ReportsEntity>,
-    @InjectRepository(TeacherCommentEntity)
-    private teacherCommentRepository: Repository<TeacherCommentEntity>,
     private notificationService: NotificationService,
     private resourceById: ResourceByIdService,
   ) {}
@@ -172,25 +171,8 @@ export class ReportsService {
       (report) => (report.classPosition = reports.indexOf(report) + 1),
     );
 
-    //get Teachers' comments for the class, term and examType
-    const comments = await this.teacherCommentRepository.find({
-      where: {
-        name,
-        num,
-        year,
-        examType,
-      },
-      relations: ['student', 'teacher'],
-    });
-
-    //assign class Teacher's comments to each report
-    reports.map((report) => {
-      comments.map((comment) => {
-        if (comment.student.studentNumber === report.studentNumber) {
-          report.classTrComment = comment.comment;
-        }
-      });
-    });
+    // Form teacher's comments are now stored directly on the report (classTrComment field)
+    // No need to fetch from a separate table
 
     //calculate subjects passed
     reports.map((report) => {
@@ -784,13 +766,62 @@ export class ReportsService {
     comment: HeadCommentDto,
     profile: StudentsEntity | TeachersEntity | ParentsEntity,
   ): Promise<ReportsEntity> {
-    //assign the comment to the report
-    comment.report.report.headComment = comment.comment;
+    if (!comment || !comment.report) {
+      throw new NotFoundException('Report data is missing');
+    }
+
+    // Fetch the existing report from database to ensure we have the full structure
+    const existingReport = await this.reportsRepository.findOne({
+      where: {
+        id: comment.report.id,
+      },
+      relations: ['student'],
+    });
+
+    if (!existingReport) {
+      throw new NotFoundException('Report not found in database');
+    }
+
+    // Update the head comment in the report data
+    if (!existingReport.report) {
+      throw new BadRequestException('Report model data is missing in database record');
+    }
+
+    existingReport.report.headComment = comment.comment;
 
     //save the report
-    return await this.reportsRepository.save({
-      ...comment.report,
+    return await this.reportsRepository.save(existingReport);
+  }
+
+  async saveFormTeacherComment(
+    comment: FormTeacherCommentDto,
+    profile: StudentsEntity | TeachersEntity | ParentsEntity,
+  ): Promise<ReportsEntity> {
+    if (!comment || !comment.report) {
+      throw new NotFoundException('Report data is missing');
+    }
+
+    // Fetch the existing report from database to ensure we have the full structure
+    const existingReport = await this.reportsRepository.findOne({
+      where: {
+        id: comment.report.id,
+      },
+      relations: ['student'],
     });
+
+    if (!existingReport) {
+      throw new NotFoundException('Report not found in database');
+    }
+
+    // Update the form teacher comment in the report data
+    if (!existingReport.report) {
+      throw new BadRequestException('Report model data is missing in database record');
+    }
+
+    existingReport.report.classTrComment = comment.comment;
+
+    //save the report
+    return await this.reportsRepository.save(existingReport);
   }
 
   async viewReports(

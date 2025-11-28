@@ -54,8 +54,43 @@ export class EnrolmentService {
     private studentsService: StudentsService,
   ) {}
 
-  async getAllClasses(): Promise<ClassEntity[]> {
-    return await this.classRepository.find();
+  async getAllClasses(): Promise<(ClassEntity & { studentCount: number })[]> {
+    const classes = await this.classRepository.find();
+    
+    // Get current term if it exists
+    const currentTerm = await this.getCurrentTerm();
+    
+    // Count enrolments for each class
+    const classesWithCounts = await Promise.all(
+      classes.map(async (clas) => {
+        let count: number;
+        
+        if (currentTerm) {
+          // Count enrolments for current term
+          count = await this.enrolmentRepository.count({
+            where: {
+              name: clas.name,
+              num: currentTerm.num,
+              year: currentTerm.year,
+            },
+          });
+        } else {
+          // If no current term, count all enrolments for this class
+          count = await this.enrolmentRepository.count({
+            where: {
+              name: clas.name,
+            },
+          });
+        }
+        
+        return {
+          ...clas,
+          studentCount: count,
+        };
+      })
+    );
+    
+    return classesWithCounts;
   }
 
   async getOneClass(name: string): Promise<ClassEntity> {
@@ -657,6 +692,64 @@ export class EnrolmentService {
     });
 
     return latestEnrol || null;
+  }
+
+  /**
+   * Gets the latest enrolment for a student with status (past/current/upcoming)
+   * @param studentNumber The student number
+   * @returns Latest enrolment with status, or null if no enrolment exists
+   */
+  async getLatestEnrolmentWithStatus(
+    studentNumber: string,
+  ): Promise<{ enrolment: EnrolEntity; status: 'past' | 'current' | 'upcoming' } | null> {
+    const latestEnrol = await this.getLatestEnrollmentForStudent(studentNumber);
+    
+    if (!latestEnrol) {
+      return null;
+    }
+
+    // Get current term to determine status
+    const currentTerm = await this.getCurrentTerm();
+    
+    let status: 'past' | 'current' | 'upcoming' = 'past';
+    
+    if (currentTerm) {
+      // Compare enrolment term with current term
+      if (latestEnrol.year === currentTerm.year && latestEnrol.num === currentTerm.num) {
+        status = 'current';
+      } else if (
+        latestEnrol.year > currentTerm.year ||
+        (latestEnrol.year === currentTerm.year && latestEnrol.num > currentTerm.num)
+      ) {
+        status = 'upcoming';
+      } else {
+        status = 'past';
+      }
+    } else {
+      // No current term - compare with today's date using term dates
+      try {
+        const today = new Date();
+        const enrolmentTerm = await this.getOneTerm(latestEnrol.num, latestEnrol.year);
+        
+        if (enrolmentTerm) {
+          if (enrolmentTerm.startDate <= today && enrolmentTerm.endDate >= today) {
+            status = 'current';
+          } else if (enrolmentTerm.startDate > today) {
+            status = 'upcoming';
+          } else {
+            status = 'past';
+          }
+        }
+      } catch (error) {
+        // If term not found, default to past
+        status = 'past';
+      }
+    }
+
+    return {
+      enrolment: latestEnrol,
+      status,
+    };
   }
 
   async isNewcomer(studentNumber: string): Promise<boolean> {

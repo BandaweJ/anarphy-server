@@ -167,6 +167,11 @@ export class EnrolmentController {
     return this.enrolmentService.getCurrentEnrollment(studentNumber);
   }
 
+  @Get('enrol/:studentNumber/latest')
+  getLatestEnrolmentWithStatus(@Param('studentNumber') studentNumber: string) {
+    return this.enrolmentService.getLatestEnrolmentWithStatus(studentNumber);
+  }
+
   @Get('enrol')
   getAllEnrolments(
     @GetUser() profile: TeachersEntity | StudentsEntity | ParentsEntity,
