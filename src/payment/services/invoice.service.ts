@@ -1,7 +1,7 @@
 /* eslint-disable prettier/prettier */
 import { Injectable, Logger, NotImplementedException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, EntityManager, IsNull, Like, Not, Or, Repository } from 'typeorm';
+import { DataSource, EntityManager, In, IsNull, Like, Not, Or, Repository } from 'typeorm';
 import * as PDFDocument from 'pdfkit';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -46,6 +46,7 @@ import { AuditService } from './audit.service';
 import { sanitizeAmount, sanitizeOptionalAmount } from '../utils/sanitization.util';
 import { InvoiceResponseDto } from '../dtos/invoice-response.dto';
 import { NotificationService } from '../../notifications/services/notification.service';
+import { SystemSettingsService } from '../../system/services/system-settings.service';
 
 @Injectable()
 export class InvoiceService {
@@ -65,6 +66,7 @@ export class InvoiceService {
     private readonly creditService: CreditService,
     private readonly auditService: AuditService,
     private readonly notificationService: NotificationService,
+    private readonly systemSettingsService: SystemSettingsService,
   ) {}
 
   async generateStatementOfAccount(
@@ -401,13 +403,17 @@ export class InvoiceService {
               ? new Date(invoice.invoiceDueDate)
               : new Date();
 
-            let totalPaymentsOnInvoice = Number(
-              invoiceToSave.amountPaidOnInvoice || 0,
-            );
-
+            // For existing invoices, DO NOT manually update amountPaidOnInvoice here.
+            // The amountPaidOnInvoice should be calculated from actual allocations (receipts + credits)
+            // which will be done by verifyAndRecalculateInvoiceBalance after saving.
+            // Manually setting it here causes double-counting when calculateInvoiceBalance
+            // later counts allocations again.
+            
+            // Only apply credit if there's outstanding balance and credit available
+            // But don't manually update amountPaidOnInvoice - let reconciliation handle it
             const creditAllocationsForExisting: CreditInvoiceAllocationEntity[] =
               [];
-            const creditApplied = await this.applyStudentCreditToInvoice(
+            await this.applyStudentCreditToInvoice(
               invoiceToSave,
               student.studentNumber,
               transactionalEntityManager,
@@ -418,14 +424,12 @@ export class InvoiceService {
               for (const allocation of creditAllocationsForExisting) {
                 await transactionalEntityManager.save(allocation);
               }
-              totalPaymentsOnInvoice += creditApplied;
             }
 
-            invoiceToSave.amountPaidOnInvoice = totalPaymentsOnInvoice;
-            this.updateInvoiceBalance(invoiceToSave, false);
-            this.verifyInvoiceBalance(invoiceToSave);
+            // Don't manually set amountPaidOnInvoice - it will be recalculated from allocations
+            // by verifyAndRecalculateInvoiceBalance after saving
             invoiceToSave.exemption = studentExemption || null;
-            invoiceToSave.status = this.getInvoiceStatus(invoiceToSave);
+            // Balance and status will be recalculated by verifyAndRecalculateInvoiceBalance
           } else {
             invoiceToSave = new InvoiceEntity();
             invoiceToSave.student = student;
@@ -519,7 +523,7 @@ export class InvoiceService {
             transactionalEntityManager,
           );
           
-          // Reload one more time to ensure we have the saved balance
+          // Reload one more time to ensure we have the saved balance with fresh allocations
           const finalInvoice = await transactionalEntityManager.findOne(
             InvoiceEntity,
             {
@@ -531,10 +535,40 @@ export class InvoiceService {
                 'bills.fees',
                 'exemption',
                 'allocations',
+                'allocations.receipt',  // Ensure receipt relation is loaded
                 'creditAllocations',
               ],
             },
           );
+          
+          // Log the allocations to debug double-counting
+          if (finalInvoice) {
+            const receiptAllocTotal = (finalInvoice.allocations || []).reduce(
+              (sum, alloc) => sum + Number(alloc.amountApplied || 0),
+              0,
+            );
+            const creditAllocTotal = (finalInvoice.creditAllocations || []).reduce(
+              (sum, alloc) => sum + Number(alloc.amountApplied || 0),
+              0,
+            );
+            logStructured(
+              this.logger,
+              'log',
+              'invoice.save.finalBalance',
+              'Final invoice balance after reconciliation',
+              {
+                invoiceId: finalInvoice.id,
+                invoiceNumber: finalInvoice.invoiceNumber,
+                amountPaidOnInvoice: finalInvoice.amountPaidOnInvoice,
+                receiptAllocationsCount: finalInvoice.allocations?.length || 0,
+                receiptAllocationsTotal: receiptAllocTotal,
+                creditAllocationsCount: finalInvoice.creditAllocations?.length || 0,
+                creditAllocationsTotal: creditAllocTotal,
+                calculatedTotal: receiptAllocTotal + creditAllocTotal,
+                balance: finalInvoice.balance,
+              },
+            );
+          }
 
           if (!finalInvoice) {
             logStructured(
@@ -561,11 +595,14 @@ export class InvoiceService {
           const calculatedBalanceForComparison = Math.max(0, calculated.balance);
           
           if (Math.abs(calculatedBalanceForComparison - actualBalance) > tolerance) {
+            // Instead of throwing an error, update the invoice balance to match the calculated balance
+            // This can happen when saving an existing invoice where reconciliation has found
+            // additional payments that weren't reflected in the stored balance
             logStructured(
               this.logger,
-              'error',
+              'warn',
               'invoice.balance.mismatch.afterReconciliation',
-              'Invoice balance mismatch detected after reconciliation',
+              'Invoice balance mismatch detected after reconciliation - updating balance',
               {
                 invoiceId: finalInvoice.id,
                 invoiceNumber: finalInvoice.invoiceNumber,
@@ -578,11 +615,36 @@ export class InvoiceService {
                 storedAmountPaidOnInvoice: finalInvoice.amountPaidOnInvoice,
               },
             );
-            throw new InvoiceBalanceMismatchException(
-              finalInvoice.invoiceNumber,
-              calculatedBalanceForComparison,
-              actualBalance,
+            
+            // Update the invoice balance to match the calculated balance
+            finalInvoice.amountPaidOnInvoice = calculated.amountPaid;
+            finalInvoice.balance = calculatedBalanceForComparison;
+            finalInvoice.status = this.getInvoiceStatus(finalInvoice);
+            
+            // Save the corrected balance
+            await transactionalEntityManager.save(InvoiceEntity, finalInvoice);
+            
+            // Reload to get the updated invoice
+            const correctedInvoice = await transactionalEntityManager.findOne(
+              InvoiceEntity,
+              {
+                where: { id: finalInvoice.id },
+                relations: [
+                  'student',
+                  'enrol',
+                  'bills',
+                  'bills.fees',
+                  'exemption',
+                  'allocations',
+                  'creditAllocations',
+                ],
+              },
             );
+            
+            if (correctedInvoice) {
+              // Use the corrected invoice for the rest of the function
+              Object.assign(finalInvoice, correctedInvoice);
+            }
           }
 
           // Note: creditAllocationsData contains allocations created BEFORE invoice was saved
@@ -1401,11 +1463,42 @@ export class InvoiceService {
 
     let currentY = 50;
 
-    const companyName = 'Junior High School';
-    const companyAddress = '30588 Lundi Drive, Rhodene, Masvingo';
-    const companyPhone = '+263 392 263 293 / +263 78 223 8026';
-    const companyEmail = 'info@juniorhighschool.ac.zw';
-    const companyWebsite = 'www.juniorhighschool.ac.zw';
+    // Fetch system settings for school information
+    let systemSettings;
+    try {
+      systemSettings = await this.systemSettingsService.getSettings();
+      
+      // Log raw settings from database for debugging
+      logStructured(this.logger, 'log', 'invoice.pdf.settings.raw', 'Raw system settings from database', {
+        schoolName: systemSettings?.schoolName,
+        schoolAddress: systemSettings?.schoolAddress,
+        schoolPhone: systemSettings?.schoolPhone,
+        schoolEmail: systemSettings?.schoolEmail,
+        schoolWebsite: systemSettings?.schoolWebsite,
+      });
+    } catch (error) {
+      logStructured(this.logger, 'warn', 'invoice.pdf.settings.error', 'Failed to fetch system settings, using defaults', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      systemSettings = null;
+    }
+
+    // Use database values if they exist and are not empty, otherwise use fallbacks
+    const companyName = (systemSettings?.schoolName?.trim()) || 'Junior High School';
+    const companyAddress = (systemSettings?.schoolAddress?.trim()) || '30588 Lundi Drive, Rhodene, Masvingo';
+    const companyPhone = (systemSettings?.schoolPhone?.trim()) || '+263 392 263 293 / +263 78 223 8026';
+    const companyEmail = (systemSettings?.schoolEmail?.trim()) || 'info@juniorhighschool.ac.zw';
+    const companyWebsite = (systemSettings?.schoolWebsite?.trim()) || 'www.juniorhighschool.ac.zw';
+
+    // Log final settings being used for debugging
+    logStructured(this.logger, 'log', 'invoice.pdf.settings.final', 'Final settings used in invoice PDF', {
+      hasSettings: !!systemSettings,
+      schoolName: companyName,
+      schoolAddress: companyAddress,
+      schoolPhone: companyPhone,
+      schoolEmail: companyEmail,
+      schoolWebsite: companyWebsite,
+    });
 
     try {
       const imgPath = path.join(process.cwd(), 'public', 'anarphy_logo.png');
@@ -1442,16 +1535,36 @@ export class InvoiceService {
       });
 
     currentY += 16;
-    doc.text(companyPhone, textStartX, currentY, {
-      align: 'left',
-      width: textWidth,
-    });
+    // Handle phone numbers - split if multiple numbers are provided
+    if (companyPhone) {
+      const phoneNumbers = companyPhone.split(/[\/,]/).map(p => p.trim()).filter(p => p);
+      if (phoneNumbers.length > 0) {
+        doc.text(phoneNumbers.join(' / '), textStartX, currentY, {
+          align: 'left',
+          width: textWidth,
+        });
+      }
+    }
 
     currentY += 16;
-    doc.text(`${companyEmail} | ${companyWebsite}`, textStartX, currentY, {
-      align: 'left',
-      width: textWidth,
-    });
+    // Format email and website
+    const contactInfo = [];
+    if (companyEmail) {
+      contactInfo.push(companyEmail);
+    }
+    if (companyWebsite) {
+      // Add http:// if not present
+      const website = companyWebsite.startsWith('http://') || companyWebsite.startsWith('https://')
+        ? companyWebsite
+        : `http://${companyWebsite}`;
+      contactInfo.push(website);
+    }
+    if (contactInfo.length > 0) {
+      doc.text(contactInfo.join(' | '), textStartX, currentY, {
+        align: 'left',
+        width: textWidth,
+      });
+    }
 
     const logoBottom = 50 + 120;
     const textBottom = currentY + 12;
@@ -1780,7 +1893,7 @@ export class InvoiceService {
     currentY += 24;
 
     const bankingDetails = [
-      { label: 'Account Name', value: 'JUNIOR HIGH SCHOOL' },
+      { label: 'Account Name', value: (systemSettings.schoolName || 'JUNIOR HIGH SCHOOL').toUpperCase() },
       { label: 'Bank', value: 'ZB BANK' },
       { label: 'Branch', value: 'MASVINGO' },
       {
@@ -1930,12 +2043,28 @@ export class InvoiceService {
     const receiptIdsWithDirectAllocations = new Set<number>();
     
     if (invoice.allocations && Array.isArray(invoice.allocations)) {
+      // Deduplicate allocations by receipt-invoice pair to prevent double-counting
+      const seenKeys = new Set<string>();
+      
       receiptAllocations = invoice.allocations.reduce(
         (sum, alloc) => {
-          // Track receipt IDs that have direct allocations
-          if (alloc.receipt?.id) {
-            receiptIdsWithDirectAllocations.add(alloc.receipt.id);
+          const receiptId = alloc.receipt?.id;
+          const invoiceId = alloc.invoice?.id || invoice.id;
+          
+          if (!receiptId) {
+            // Allocation without receipt ID - count it
+            return sum + Number(alloc.amountApplied || 0);
           }
+          
+          const key = `${receiptId}-${invoiceId}`;
+          
+          // Only count the first allocation for each receipt-invoice pair
+          if (seenKeys.has(key)) {
+            return sum; // Skip duplicate
+          }
+          
+          seenKeys.add(key);
+          receiptIdsWithDirectAllocations.add(receiptId);
           return sum + Number(alloc.amountApplied || 0);
         },
         0,
@@ -1956,10 +2085,20 @@ export class InvoiceService {
       );
     }
 
-    const amountPaid =
-      receiptAllocations > 0 || creditAllocations > 0
-        ? receiptAllocations + creditAllocations
-        : Number(invoice.amountPaidOnInvoice || 0);
+    // IMPORTANT: For existing invoices (with ID), ALWAYS calculate from allocations.
+    // The amountPaidOnInvoice field is a cached value that was set from allocations,
+    // so using it would double-count if allocations are also counted.
+    // Only use amountPaidOnInvoice for new invoices that haven't been saved yet.
+    // This prevents double-counting where:
+    // 1. Receipt creates allocation (50) and sets amountPaidOnInvoice (50)
+    // 2. Later, if we use amountPaidOnInvoice (50) AND count allocations (50) = 100 (WRONG!)
+    const isNewInvoice = !invoice.id;
+    
+    // For existing invoices, always use allocations (even if they sum to 0 or aren't loaded)
+    // For new invoices, use amountPaidOnInvoice (which might have credit applied during creation)
+    const amountPaid = isNewInvoice
+      ? Number(invoice.amountPaidOnInvoice || 0)
+      : receiptAllocations + creditAllocations;
 
     const balance = totalBill - amountPaid;
 
@@ -2499,11 +2638,55 @@ export class InvoiceService {
     const exemptedAmountForLog = Number(freshInvoice.exemptedAmount || 0);
 
     // Sum all receipt allocations (direct allocations from receipts)
+    // IMPORTANT: If there are duplicate allocations (same receipt + invoice), we should only count ONE
+    // Duplicate allocation records cause double-counting. We keep the first one for each receipt-invoice pair.
     const receiptAllocations = freshInvoice.allocations || [];
-    const totalReceiptAllocated = receiptAllocations.reduce(
-      (sum, alloc) => sum + Number(alloc.amountApplied || 0),
-      0,
-    );
+    const seenKeys = new Set<string>();
+    const duplicateAllocationIds: number[] = [];
+    let totalReceiptAllocated = 0;
+    
+    for (const alloc of receiptAllocations) {
+      const receiptId = alloc.receipt?.id;
+      const invoiceId = alloc.invoice?.id || freshInvoice.id;
+      if (!receiptId) {
+        // Allocation without receipt ID - count it but log a warning
+        totalReceiptAllocated += Number(alloc.amountApplied || 0);
+        continue;
+      }
+      
+      const key = `${receiptId}-${invoiceId}`;
+      
+      if (seenKeys.has(key)) {
+        // This is a duplicate - mark it for removal
+        duplicateAllocationIds.push(alloc.id);
+      } else {
+        // First time seeing this receipt-invoice pair - count it
+        seenKeys.add(key);
+        totalReceiptAllocated += Number(alloc.amountApplied || 0);
+      }
+    }
+    
+    // Remove duplicate allocations from database
+    if (duplicateAllocationIds.length > 0) {
+      await transactionalEntityManager.delete(
+        ReceiptInvoiceAllocationEntity,
+        { id: In(duplicateAllocationIds) },
+      );
+      logStructured(
+        this.logger,
+        'warn',
+        'invoice.reconciliation.duplicateAllocationsRemoved',
+        'Removed duplicate receipt allocations from database',
+        {
+          invoiceId: freshInvoice.id,
+          invoiceNumber: freshInvoice.invoiceNumber,
+          totalAllocations: receiptAllocations.length,
+          uniqueAllocations: seenKeys.size,
+          duplicatesRemoved: duplicateAllocationIds.length,
+          totalAmount: totalReceiptAllocated,
+        },
+      );
+    }
 
     // Get set of receipt IDs that already have direct allocations to this invoice
     // This prevents double-counting when a receipt created both an allocation and a credit

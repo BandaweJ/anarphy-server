@@ -27,6 +27,7 @@ import { RolesGuard } from 'src/auth/guards/roles.guard';
 import { AuditService } from './services/audit.service';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { forwardRef } from '@nestjs/common';
+import { SystemModule } from '../system/system.module';
 
 @Module({
   controllers: [PaymentController],
@@ -45,6 +46,7 @@ import { forwardRef } from '@nestjs/common';
     ProfilesModule,
     EnrolmentModule,
     FinanceModule,
+    forwardRef(() => SystemModule),
     TypeOrmModule.forFeature([
       ReceiptEntity,
       InvoiceEntity,

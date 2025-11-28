@@ -106,5 +106,13 @@ export class RolesPermissionsController {
     const hasPermission = await this.rolesPermissionsService.hasPermission(accountId, permissionName);
     return { hasPermission };
   }
+
+  // Re-seed role permissions (admin only)
+  @Post('seed-role-permissions')
+  @HttpCode(HttpStatus.OK)
+  async seedRolePermissions() {
+    await this.rolesPermissionsService.seedRolePermissions();
+    return { message: 'Role permissions have been re-seeded successfully' };
+  }
 }
 

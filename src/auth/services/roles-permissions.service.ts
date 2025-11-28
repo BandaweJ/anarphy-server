@@ -353,9 +353,9 @@ export class RolesPermissionsService {
     // Define default permissions for each role
     const rolePermissions: Record<string, string[]> = {
       [ROLES.admin]: [
-        // Admin has all permissions
+        // Admin has all permissions including reports.download
         ...Object.values(PERMISSIONS.FINANCE),
-        ...Object.values(PERMISSIONS.REPORTS),
+        ...Object.values(PERMISSIONS.REPORTS), // Includes REPORTS.DOWNLOAD
         ...Object.values(PERMISSIONS.MARKS),
         ...Object.values(PERMISSIONS.ATTENDANCE),
         ...Object.values(PERMISSIONS.ENROLMENT),
@@ -363,9 +363,9 @@ export class RolesPermissionsService {
         ...Object.values(PERMISSIONS.SYSTEM),
       ],
       [ROLES.director]: [
-        // Director has comprehensive oversight permissions
+        // Director has comprehensive oversight permissions including reports.download
         ...Object.values(PERMISSIONS.FINANCE),
-        ...Object.values(PERMISSIONS.REPORTS),
+        ...Object.values(PERMISSIONS.REPORTS), // Includes REPORTS.DOWNLOAD
         ...Object.values(PERMISSIONS.MARKS),
         ...Object.values(PERMISSIONS.ATTENDANCE),
         ...Object.values(PERMISSIONS.ENROLMENT),
@@ -388,9 +388,9 @@ export class RolesPermissionsService {
         PERMISSIONS.SYSTEM.VIEW_AUDIT,
       ],
       [ROLES.reception]: [
-        // Reception now has all director and auditor permissions
+        // Reception has comprehensive permissions including reports.download
         ...Object.values(PERMISSIONS.FINANCE),
-        ...Object.values(PERMISSIONS.REPORTS),
+        ...Object.values(PERMISSIONS.REPORTS), // Includes REPORTS.DOWNLOAD
         ...Object.values(PERMISSIONS.MARKS),
         ...Object.values(PERMISSIONS.ATTENDANCE),
         ...Object.values(PERMISSIONS.ENROLMENT),

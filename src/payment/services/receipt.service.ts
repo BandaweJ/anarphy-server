@@ -55,6 +55,7 @@ import { logStructured } from '../utils/logger.util';
 import { AuditService } from './audit.service';
 import { sanitizeAmount } from '../utils/sanitization.util';
 import { NotificationService } from '../../notifications/services/notification.service';
+import { SystemSettingsService } from '../../system/services/system-settings.service';
 
 @Injectable()
 export class ReceiptService {
@@ -73,6 +74,7 @@ export class ReceiptService {
     private readonly invoiceService: InvoiceService,
     private readonly dataSource: DataSource,
     private readonly auditService: AuditService,
+    private readonly systemSettingsService: SystemSettingsService,
   ) {}
 
   /**
@@ -1278,7 +1280,19 @@ export class ReceiptService {
 
     const logoPath = path.join(process.cwd(), 'public', 'anarphy_logo.png');
 
-    return new Promise(async (resolve, reject) => {
+    // Fetch system settings for school information before creating PDF
+    const systemSettings = await this.systemSettingsService.getSettings();
+    const schoolName = systemSettings.schoolName || 'Junior High School';
+    const schoolAddress = systemSettings.schoolAddress || '30588 Lundi Drive, Rhodene, Masvingo';
+    const schoolPhone = systemSettings.schoolPhone || '+263 392 263 293';
+    const schoolEmail = systemSettings.schoolEmail || 'info@juniorhighschool.ac.zw';
+
+    // Fetch student balance before creating PDF
+    const amountOutstanding = receipt.student
+      ? await this.getStudentBalance(receipt.student.studentNumber)
+      : { amountDue: 0 };
+
+    return new Promise((resolve, reject) => {
       const doc = new PDFDocument({
         size: 'A4',
         margin: 0,
@@ -1501,17 +1515,27 @@ export class ReceiptService {
       doc.font(defaultFont).fontSize(9).fillColor('#000');
 
       doc.font(defaultFontBold).fontSize(10);
-      doc.text('Junior High School', toBlockX + partyBlockPadding, toContentY);
+      doc.text(schoolName, toBlockX + partyBlockPadding, toContentY);
       toContentY += doc.currentLineHeight() + lineSpacing;
       doc.font(defaultFont).fontSize(9);
 
-      doc.text('30588 Lundi Drive, Rhodene, Masvingo', toBlockX + partyBlockPadding, toContentY);
+      doc.text(schoolAddress, toBlockX + partyBlockPadding, toContentY);
       toContentY += doc.currentLineHeight() + lineSpacing;
-      doc.text('+263 392 263 293', toBlockX + partyBlockPadding, toContentY);
-      toContentY += doc.currentLineHeight() + lineSpacing;
-      doc.text('+263 78 223 8026', toBlockX + partyBlockPadding, toContentY);
-      toContentY += doc.currentLineHeight() + lineSpacing;
-      doc.text('info@juniorhighschool.ac.zw', toBlockX + partyBlockPadding, toContentY);
+      if (schoolPhone) {
+        // Handle multiple phone numbers if they exist (split by / or comma)
+        const phoneNumbers = schoolPhone.split(/[\/,]/).map(p => p.trim()).filter(p => p);
+        phoneNumbers.forEach((phone, index) => {
+          if (index > 0) {
+            toContentY += doc.currentLineHeight() + lineSpacing;
+          }
+          doc.text(phone, toBlockX + partyBlockPadding, toContentY);
+        });
+        toContentY += doc.currentLineHeight() + lineSpacing;
+      }
+      if (schoolEmail) {
+        doc.text(schoolEmail, toBlockX + partyBlockPadding, toContentY);
+        toContentY += doc.currentLineHeight() + lineSpacing;
+      }
 
       currentY = Math.max(fromBlockY + fromBlockHeight, toBlockY + toBlockHeight) + this.mmToPt(8);
 
@@ -1575,10 +1599,6 @@ export class ReceiptService {
 
       doc.font(defaultFont).fontSize(9).fillColor('#7f8c8d');
       doc.text('AMOUNT OUTSTANDING', pageMargin + padding, summaryY);
-
-      const amountOutstanding = receipt.student
-        ? await this.getStudentBalance(receipt.student.studentNumber)
-        : { amountDue: 0 };
 
       doc.font(defaultFontBold).fontSize(11).fillColor('#f44336');
       const amountOutstandingText = this.formatCurrency(amountOutstanding.amountDue);
