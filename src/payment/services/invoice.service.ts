@@ -2025,15 +2025,14 @@ export class InvoiceService {
   private calculateInvoiceBalance(
     invoice: InvoiceEntity,
   ): { totalBill: number; amountPaid: number; balance: number } {
-    const grossBill =
-      invoice.bills?.reduce(
-        (sum, bill) => sum + Number(bill.fees?.amount || 0),
-        0,
-      ) || 0;
-
-    const exemptedAmount = this._calculateExemptionAmount(invoice);
-    const netBill = Math.max(0, grossBill - exemptedAmount);
-    const totalBill = netBill;
+    // IMPORTANT: Use the stored invoice.totalBill directly instead of recalculating from bills.
+    // The stored totalBill already represents the NET bill (gross fees - exemptions) as calculated
+    // by calculateNetBillAmount during invoice save. Recalculating here would:
+    // 1. Potentially miss the exemption if bills array doesn't include it (exemption is only added for PDF display)
+    // 2. Introduce inconsistencies if bills are modified after save
+    // 3. Double-apply exemptions if exemption bills are somehow included in the bills array
+    // The stored totalBill is the source of truth.
+    const totalBill = Number(invoice.totalBill || 0);
 
     let receiptAllocations = 0;
     let creditAllocations = 0;
