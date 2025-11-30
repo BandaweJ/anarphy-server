@@ -1893,12 +1893,12 @@ export class InvoiceService {
     currentY += 24;
 
     const bankingDetails = [
-      { label: 'Account Name', value: (systemSettings.schoolName || 'JUNIOR HIGH SCHOOL').toUpperCase() },
-      { label: 'Bank', value: 'ZB BANK' },
-      { label: 'Branch', value: 'MASVINGO' },
+      { label: 'Account Name', value: 'ANARPHY HIGH SCHOOL' },
+      { label: 'Bank', value: 'CBZ' },
+      { label: 'Branch', value: 'Harare' },
       {
         label: 'Account Number',
-        value: '4564 00321642 405',
+        value: '044 27551050013',
         highlight: true,
       },
     ];
