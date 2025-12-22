@@ -2059,6 +2059,10 @@ export class InvoiceService {
     let receiptAllocations = 0;
     let creditAllocations = 0;
     
+    // Get set of receipt IDs that have direct allocations to this invoice
+    // This prevents double-counting when a receipt created both an allocation and a credit
+    const receiptIdsWithDirectAllocations = new Set<number>();
+    
     if (invoice.allocations && Array.isArray(invoice.allocations)) {
       // Deduplicate allocations by receipt-invoice pair to prevent double-counting
       const seenKeys = new Set<string>();
@@ -2072,6 +2076,9 @@ export class InvoiceService {
             // Allocation without receipt ID - count it
             return sum + Number(alloc.amountApplied || 0);
           }
+          
+          // Track receipt IDs that have direct allocations
+          receiptIdsWithDirectAllocations.add(receiptId);
           
           const key = `${receiptId}-${invoiceId}`;
           
@@ -2088,9 +2095,16 @@ export class InvoiceService {
     }
 
     if (invoice.creditAllocations && Array.isArray(invoice.creditAllocations)) {
-      // Include ALL credit allocations to match ledger calculation
+      // Sum credit allocations, but EXCLUDE credits that came from receipts
+      // that already have direct allocations to this invoice (to prevent double-counting)
+      // This matches the ledger calculation logic
       creditAllocations = invoice.creditAllocations.reduce(
         (sum, alloc) => {
+          // If this credit allocation has a relatedReceiptId and that receipt
+          // already has a direct allocation to this invoice, skip it to avoid double-counting
+          if (alloc.relatedReceiptId && receiptIdsWithDirectAllocations.has(alloc.relatedReceiptId)) {
+            return sum; // Don't count this credit allocation
+          }
           return sum + Number(alloc.amountApplied || 0);
         },
         0,
@@ -2106,14 +2120,18 @@ export class InvoiceService {
     // 2. Later, if we use amountPaidOnInvoice (50) AND count allocations (50) = 100 (WRONG!)
     const isNewInvoice = !invoice.id;
     
-    // IMPORTANT: amountPaid should include BOTH receipt and credit allocations to match ledger.
-    // The ledger shows total amount applied (receipts + credits), so invoice summary should match.
+    // IMPORTANT: Match ledger logic - Amount Paid = receipt allocations only.
+    // Credit allocations are for display/tracking only and don't reduce the balance
+    // because they represent money that was already counted when the receipt was processed.
+    // The ledger uses cash-flow: invoices add to balance, receipts subtract from balance.
+    // Allocations (including credit allocations) are display-only.
     const amountPaid = isNewInvoice
       ? Number(invoice.amountPaidOnInvoice || 0)
-      : receiptAllocations + creditAllocations;
+      : receiptAllocations;
 
-    // Balance should match ledger: totalBill - (receipts + credits)
-    const balance = totalBill - (receiptAllocations + creditAllocations);
+    // Balance matches ledger: totalBill - receipt allocations only
+    // Credit allocations don't reduce balance (they're display-only, money already counted)
+    const balance = totalBill - receiptAllocations;
 
     return { totalBill, amountPaid, balance };
   }
@@ -2702,23 +2720,41 @@ export class InvoiceService {
       );
     }
 
-    // Sum credit allocations (overpayments applied as credit)
+    // Get set of receipt IDs that have direct allocations to this invoice
+    // This prevents double-counting when a receipt created both an allocation and a credit
+    const receiptIdsWithDirectAllocations = new Set<number>();
+    for (const alloc of receiptAllocations) {
+      if (alloc.receipt?.id) {
+        receiptIdsWithDirectAllocations.add(alloc.receipt.id);
+      }
+    }
+
+    // Sum credit allocations, but EXCLUDE credits that came from receipts
+    // that already have direct allocations to this invoice (to prevent double-counting)
+    // This matches the ledger calculation logic
     const creditAllocations = freshInvoice.creditAllocations || [];
     const totalCreditAllocated = creditAllocations.reduce((sum, alloc) => {
+      // If this credit allocation has a relatedReceiptId and that receipt
+      // already has a direct allocation to this invoice, skip it to avoid double-counting
+      if (alloc.relatedReceiptId && receiptIdsWithDirectAllocations.has(alloc.relatedReceiptId)) {
+        return sum; // Don't count this credit allocation
+      }
       return sum + Number(alloc.amountApplied || 0);
     }, 0);
 
-    // Total applied = receipt allocations + credit allocations
-    // This matches the ledger calculation where both receipts and credits reduce the balance
-    const totalApplied = totalReceiptAllocated + totalCreditAllocated;
-    const calculatedBalance = netBill - totalApplied;
+    // IMPORTANT: Match ledger logic - Amount Paid = receipt allocations only.
+    // Credit allocations are for display/tracking only and don't reduce the balance
+    // because they represent money that was already counted when the receipt was processed.
+    // The ledger uses cash-flow: invoices add to balance, receipts subtract from balance.
+    // Allocations (including credit allocations) are display-only.
+    const calculatedBalance = netBill - totalReceiptAllocated;
 
     // Update invoice fields
-    // IMPORTANT: amountPaidOnInvoice should include BOTH receipt and credit allocations to match ledger.
-    // The invoice summary should reflect the same as the ledger: total amount applied (receipts + credits).
+    // IMPORTANT: amountPaidOnInvoice should only reflect receipt allocations to match ledger.
+    // Credit allocations don't count as "payments" - they're just allocations of already-counted money.
     // For overpayments, amountPaidOnInvoice should be capped at netBill (what the invoice is worth)
-    freshInvoice.amountPaidOnInvoice = Math.min(totalApplied, netBill); // Receipts + credits, capped at netBill
-    freshInvoice.balance = Math.max(0, calculatedBalance); // Balance accounts for both receipts and credits
+    freshInvoice.amountPaidOnInvoice = Math.min(totalReceiptAllocated, netBill); // Receipt allocations only, capped at netBill
+    freshInvoice.balance = Math.max(0, calculatedBalance); // Balance = totalBill - receipt allocations only
     
     // Update status based on the recalculated balance
     freshInvoice.status = this.getInvoiceStatus(freshInvoice);
@@ -2945,19 +2981,38 @@ export class InvoiceService {
             );
 
             if (invoice) {
+              // Get set of receipt IDs that have direct allocations
+              const receiptIdsWithDirectAllocations = new Set<number>();
               const receiptAllocated = (invoice.allocations || []).reduce(
-                (sum, alloc) => sum + Number(alloc.amountApplied || 0),
+                (sum, alloc) => {
+                  if (alloc.receipt?.id) {
+                    receiptIdsWithDirectAllocations.add(alloc.receipt.id);
+                  }
+                  return sum + Number(alloc.amountApplied || 0);
+                },
                 0,
               );
+              
+              // Exclude credit allocations from receipts that already have direct allocations
               const creditAllocated = (invoice.creditAllocations || []).reduce(
-                (sum, alloc) => sum + Number(alloc.amountApplied || 0),
+                (sum, alloc) => {
+                  if (alloc.relatedReceiptId && receiptIdsWithDirectAllocations.has(alloc.relatedReceiptId)) {
+                    return sum; // Don't count this credit allocation
+                  }
+                  return sum + Number(alloc.amountApplied || 0);
+                },
                 0,
               );
-              const totalAllocated = receiptAllocated + creditAllocated;
 
+              // Match ledger logic: Amount Paid = receipt allocations only
+              // Credit allocations don't count as payments (they're display-only)
               invoice.amountPaidOnInvoice = Math.min(
-                totalAllocated,
+                receiptAllocated,
                 Number(invoice.totalBill || 0),
+              );
+              invoice.balance = Math.max(
+                0,
+                Number(invoice.totalBill || 0) - receiptAllocated,
               );
 
               await transactionalEntityManager.save(invoice);
@@ -3106,22 +3161,36 @@ export class InvoiceService {
           );
 
           if (updatedInvoice) {
-            // Recalculate amountPaidOnInvoice from allocations (receipts + credits)
+            // Get set of receipt IDs that have direct allocations
+            const receiptIdsWithDirectAllocations = new Set<number>();
             const receiptAllocated = (updatedInvoice.allocations || []).reduce(
-              (sum, alloc) => sum + Number(alloc.amountApplied || 0),
+              (sum, alloc) => {
+                if (alloc.receipt?.id) {
+                  receiptIdsWithDirectAllocations.add(alloc.receipt.id);
+                }
+                return sum + Number(alloc.amountApplied || 0);
+              },
               0,
             );
+            
+            // Exclude credit allocations from receipts that already have direct allocations
             const creditAllocated = (updatedInvoice.creditAllocations || []).reduce(
-              (sum, alloc) => sum + Number(alloc.amountApplied || 0),
+              (sum, alloc) => {
+                if (alloc.relatedReceiptId && receiptIdsWithDirectAllocations.has(alloc.relatedReceiptId)) {
+                  return sum; // Don't count this credit allocation
+                }
+                return sum + Number(alloc.amountApplied || 0);
+              },
               0,
             );
-            const totalAllocated = receiptAllocated + creditAllocated;
 
+            // Match ledger logic: Amount Paid = receipt allocations only
+            // Credit allocations don't count as payments (they're display-only)
             const invoiceTotalBill = Number(updatedInvoice.totalBill || 0);
-            updatedInvoice.amountPaidOnInvoice = totalAllocated;
+            updatedInvoice.amountPaidOnInvoice = receiptAllocated;
             updatedInvoice.balance = Math.max(
               0,
-              invoiceTotalBill - totalAllocated,
+              invoiceTotalBill - receiptAllocated,
             );
             updatedInvoice.status = this.getInvoiceStatus(updatedInvoice);
 
