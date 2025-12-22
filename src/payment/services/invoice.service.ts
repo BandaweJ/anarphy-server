@@ -536,16 +536,17 @@ export class InvoiceService {
 
           // Recalculate and update the balance using the same logic as reconciliation
           // This ensures consistency with how reconciliation handles overpayments
-          await this.verifyAndRecalculateInvoiceBalance(
+          const updatedInvoice = await this.verifyAndRecalculateInvoiceBalance(
             reloadedInvoice,
             transactionalEntityManager,
           );
           
           // Reload one more time to ensure we have the saved balance with fresh allocations
+          // Use the updated invoice ID to ensure we get the latest data
           const finalInvoice = await transactionalEntityManager.findOne(
             InvoiceEntity,
             {
-              where: { id: reloadedInvoice.id },
+              where: { id: updatedInvoice.id },
               relations: [
                 'student',
                 'enrol',
@@ -2633,11 +2634,12 @@ export class InvoiceService {
 
   /**
    * Verifies and recalculates invoice balance based on allocations.
+   * Returns the updated invoice entity.
    */
   private async verifyAndRecalculateInvoiceBalance(
     invoice: InvoiceEntity,
     transactionalEntityManager: EntityManager,
-  ): Promise<void> {
+  ): Promise<InvoiceEntity> {
     // Reload invoice with fresh allocations
     const freshInvoice = await transactionalEntityManager.findOne(
       InvoiceEntity,
@@ -2648,7 +2650,7 @@ export class InvoiceService {
     );
 
     if (!freshInvoice) {
-      return;
+      return invoice; // Return original if not found
     }
 
     // IMPORTANT:
@@ -2772,6 +2774,9 @@ export class InvoiceService {
     }
 
     await transactionalEntityManager.save(InvoiceEntity, freshInvoice);
+    
+    // Return the updated invoice
+    return freshInvoice;
   }
 
   /**
