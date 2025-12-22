@@ -354,6 +354,7 @@ export class RolesPermissionsService {
     const rolePermissions: Record<string, string[]> = {
       [ROLES.admin]: [
         // Admin has all permissions including reports.download
+        // Admin has all permissions that reception has, plus additional admin-only permissions
         ...Object.values(PERMISSIONS.FINANCE),
         ...Object.values(PERMISSIONS.REPORTS), // Includes REPORTS.DOWNLOAD
         ...Object.values(PERMISSIONS.MARKS),
@@ -361,6 +362,8 @@ export class RolesPermissionsService {
         ...Object.values(PERMISSIONS.ENROLMENT),
         ...Object.values(PERMISSIONS.USERS),
         ...Object.values(PERMISSIONS.SYSTEM),
+        ...Object.values(PERMISSIONS.PARENTS), // All parent management permissions
+        ...Object.values(PERMISSIONS.STUDENTS), // All student management permissions
       ],
       [ROLES.director]: [
         // Director has comprehensive oversight permissions including reports.download

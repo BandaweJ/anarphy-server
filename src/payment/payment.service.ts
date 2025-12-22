@@ -57,7 +57,7 @@ export class PaymentService {
     );
 
     const userRole = await this.getUserRoleByEmail(voidedByEmail);
-    const allowedRoles = [ROLES.auditor, ROLES.director, ROLES.reception];
+    const allowedRoles = [ROLES.auditor, ROLES.director, ROLES.reception, ROLES.admin];
     if (!allowedRoles.includes(userRole)) {
       logStructured(
         this.logger,
@@ -67,7 +67,7 @@ export class PaymentService {
         { receiptId, voidedByEmail, userRole },
       );
       throw new UnauthorizedException(
-        'Only auditors, directors, and reception staff can void receipts.',
+        'Only auditors, directors, reception staff, and admins can void receipts.',
       );
     }
 
@@ -129,9 +129,9 @@ export class PaymentService {
       { invoiceId, voidedByEmail },
     );
 
-    // Authorization check: Only auditors and directors can void invoices
+    // Authorization check: Only auditors, directors, reception, and admins can void invoices
     const userRole = await this.getUserRoleByEmail(voidedByEmail);
-    const allowedRoles = [ROLES.auditor, ROLES.director];
+    const allowedRoles = [ROLES.auditor, ROLES.director, ROLES.reception, ROLES.admin];
     if (!allowedRoles.includes(userRole)) {
       logStructured(
         this.logger,
@@ -141,7 +141,7 @@ export class PaymentService {
         { invoiceId, voidedByEmail, userRole },
       );
       throw new UnauthorizedException(
-        'Only auditors and directors can void invoices.',
+        'Only auditors, directors, reception staff, and admins can void invoices.',
       );
     }
 
