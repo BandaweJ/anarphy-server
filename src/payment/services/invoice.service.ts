@@ -2036,7 +2036,11 @@ export class InvoiceService {
     } else {
       const totalBill = Number(invoice.totalBill);
       invoice.amountPaidOnInvoice = calculated.amountPaid;
-      invoice.balance = totalBill - calculated.amountPaid;
+      // IMPORTANT: Use calculated.balance directly, not totalBill - amountPaid
+      // because calculated.balance already accounts for both receipt AND credit allocations
+      // amountPaid only includes receipt allocations, so using totalBill - amountPaid
+      // would exclude credit allocations from the balance calculation
+      invoice.balance = calculated.balance;
     }
   }
 
