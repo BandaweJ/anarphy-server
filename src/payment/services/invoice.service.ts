@@ -2058,10 +2058,6 @@ export class InvoiceService {
 
     let receiptAllocations = 0;
     let creditAllocations = 0;
-
-    // Get set of receipt IDs that have direct allocations to this invoice
-    // This prevents double-counting when a receipt created both an allocation and a credit
-    const receiptIdsWithDirectAllocations = new Set<number>();
     
     if (invoice.allocations && Array.isArray(invoice.allocations)) {
       // Deduplicate allocations by receipt-invoice pair to prevent double-counting
@@ -2085,7 +2081,6 @@ export class InvoiceService {
           }
           
           seenKeys.add(key);
-          receiptIdsWithDirectAllocations.add(receiptId);
           return sum + Number(alloc.amountApplied || 0);
         },
         0,
@@ -2093,13 +2088,14 @@ export class InvoiceService {
     }
 
     if (invoice.creditAllocations && Array.isArray(invoice.creditAllocations)) {
+      // IMPORTANT: Include ALL credit allocations, even if they came from receipts
+      // that also have direct allocations. This is because:
+      // - A receipt might pay $3,000
+      // - $2,581 might be allocated directly to the invoice
+      // - $419 might become credit (overpayment) and then be applied to the invoice
+      // - Both should be counted as they represent the total payment from that receipt
       creditAllocations = invoice.creditAllocations.reduce(
         (sum, alloc) => {
-          // If this credit allocation has a relatedReceiptId and that receipt
-          // already has a direct allocation to this invoice, skip it to avoid double-counting
-          if (alloc.relatedReceiptId && receiptIdsWithDirectAllocations.has(alloc.relatedReceiptId)) {
-            return sum; // Don't count this credit allocation
-          }
           return sum + Number(alloc.amountApplied || 0);
         },
         0,
@@ -2715,24 +2711,17 @@ export class InvoiceService {
       );
     }
 
-    // Get set of receipt IDs that already have direct allocations to this invoice
-    // This prevents double-counting when a receipt created both an allocation and a credit
-    const receiptIdsWithDirectAllocations = new Set<number>();
-    for (const alloc of receiptAllocations) {
-      if (alloc.receipt?.id) {
-        receiptIdsWithDirectAllocations.add(alloc.receipt.id);
-      }
-    }
-
-    // Sum credit allocations, but EXCLUDE credits that came from receipts
-    // that already have direct allocations to this invoice (to prevent double-counting)
+    // Sum credit allocations
+    // IMPORTANT: We should include ALL credit allocations, even if they came from receipts
+    // that also have direct allocations. This is because:
+    // - A receipt might pay $3,000
+    // - $2,581 might be allocated directly to the invoice
+    // - $419 might become credit (overpayment) and then be applied to the invoice
+    // - Both should be counted as they represent the total payment from that receipt
+    // The only time we'd exclude is if there's a retroactive receipt allocation created
+    // from a credit allocation (which would be a duplicate), but that's handled elsewhere
     const creditAllocations = freshInvoice.creditAllocations || [];
     const totalCreditAllocated = creditAllocations.reduce((sum, alloc) => {
-      // If this credit allocation has a relatedReceiptId and that receipt
-      // already has a direct allocation to this invoice, skip it to avoid double-counting
-      if (alloc.relatedReceiptId && receiptIdsWithDirectAllocations.has(alloc.relatedReceiptId)) {
-        return sum; // Don't count this credit allocation
-      }
       return sum + Number(alloc.amountApplied || 0);
     }, 0);
 
