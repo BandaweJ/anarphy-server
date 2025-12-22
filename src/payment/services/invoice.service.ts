@@ -429,7 +429,25 @@ export class InvoiceService {
             // Don't manually set amountPaidOnInvoice - it will be recalculated from allocations
             // by verifyAndRecalculateInvoiceBalance after saving
             invoiceToSave.exemption = studentExemption || null;
-            // Balance and status will be recalculated by verifyAndRecalculateInvoiceBalance
+            // For existing invoices, we need to recalculate balance after updating totalBill
+            // Reload invoice with allocations to get accurate balance calculation
+            const invoiceWithAllocations = await transactionalEntityManager.findOne(
+              InvoiceEntity,
+              {
+                where: { id: invoiceToSave.id },
+                relations: ['allocations', 'creditAllocations', 'allocations.receipt'],
+              },
+            );
+            if (invoiceWithAllocations) {
+              // Update the invoice object with fresh allocations for balance calculation
+              invoiceToSave.allocations = invoiceWithAllocations.allocations;
+              invoiceToSave.creditAllocations = invoiceWithAllocations.creditAllocations;
+              // Recalculate balance - this uses calculateInvoiceBalance which includes both receipts and credits
+              this.updateInvoiceBalance(invoiceToSave, false); // false = don't recalculate totalBill, use the one we just set
+              invoiceToSave.status = this.getInvoiceStatus(invoiceToSave);
+            }
+            // Balance will be recalculated again by verifyAndRecalculateInvoiceBalance after reconciliation
+            // to ensure it's absolutely correct, but this gives us a good initial value
           } else {
             invoiceToSave = new InvoiceEntity();
             invoiceToSave.student = student;
