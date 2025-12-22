@@ -60,7 +60,7 @@ export class InvoiceEntity {
     default: 0.0,
     comment: 'Amount paid cannot be negative (enforced by database constraint)',
   })
-  amountPaidOnInvoice: number; // Tracks how much has been paid directly towards THIS invoice
+  amountPaidOnInvoice: number; // Tracks total amount applied to THIS invoice (receipt allocations + credit allocations)
 
   @Column({ default: InvoiceStatus.Pending })
   status: InvoiceStatus; // The current status of THIS invoice

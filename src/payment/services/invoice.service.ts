@@ -404,7 +404,7 @@ export class InvoiceService {
               : new Date();
 
             // For existing invoices, DO NOT manually update amountPaidOnInvoice here.
-            // The amountPaidOnInvoice should be calculated from actual receipt allocations (NOT credits)
+            // The amountPaidOnInvoice should be calculated from total allocations (receipts + credits)
             // which will be done by verifyAndRecalculateInvoiceBalance after saving.
             // Manually setting it here causes double-counting when calculateInvoiceBalance
             // later counts allocations again.
@@ -2038,8 +2038,7 @@ export class InvoiceService {
       invoice.amountPaidOnInvoice = calculated.amountPaid;
       // IMPORTANT: Use calculated.balance directly, not totalBill - amountPaid
       // because calculated.balance already accounts for both receipt AND credit allocations
-      // amountPaid only includes receipt allocations, so using totalBill - amountPaid
-      // would exclude credit allocations from the balance calculation
+      // and uses the correct calculation: totalBill - (receiptAllocations + creditAllocations)
       invoice.balance = calculated.balance;
     }
   }
@@ -2115,13 +2114,13 @@ export class InvoiceService {
     // 2. Later, if we use amountPaidOnInvoice (50) AND count allocations (50) = 100 (WRONG!)
     const isNewInvoice = !invoice.id;
     
-    // IMPORTANT: amountPaid should ONLY reflect actual payments (receipt allocations),
-    // NOT credit allocations. Credits reduce the balance but are not "payments" on the invoice.
-    // For existing invoices, always use receipt allocations (even if they sum to 0 or aren't loaded)
+    // IMPORTANT: amountPaid should reflect the total amount applied to the invoice,
+    // which includes both receipt allocations AND credit allocations (total payment received).
+    // For existing invoices, always calculate from allocations (receipts + credits)
     // For new invoices, use amountPaidOnInvoice (which might have credit applied during creation)
     const amountPaid = isNewInvoice
       ? Number(invoice.amountPaidOnInvoice || 0)
-      : receiptAllocations; // Only receipt allocations, NOT credit allocations
+      : receiptAllocations + creditAllocations; // Total applied (receipts + credits)
 
     // Balance calculation should include BOTH receipt allocations AND credit allocations
     // because both reduce what the student owes
@@ -2741,10 +2740,10 @@ export class InvoiceService {
     const calculatedBalance = netBill - totalApplied;
 
     // Update invoice fields
-    // IMPORTANT: amountPaidOnInvoice should ONLY reflect actual payments (receipt allocations),
-    // NOT credit allocations. Credits reduce the balance but are not "payments" on the invoice.
+    // IMPORTANT: amountPaidOnInvoice should reflect the total amount applied to the invoice,
+    // which includes both receipt allocations AND credit allocations (total payment received).
     // For overpayments, amountPaidOnInvoice should be capped at netBill (what the invoice is worth)
-    freshInvoice.amountPaidOnInvoice = Math.min(totalReceiptAllocated, netBill); // Only receipt allocations, capped at netBill
+    freshInvoice.amountPaidOnInvoice = Math.min(totalApplied, netBill); // Total applied (receipts + credits), capped at netBill
     freshInvoice.balance = Math.max(0, calculatedBalance); // Balance cannot be negative
     
     // Update status based on the recalculated balance
@@ -3357,7 +3356,7 @@ export class InvoiceService {
 
     // IMPORTANT: Do NOT update amountPaidOnInvoice when applying credits.
     // Credits reduce the balance but are NOT payments on the invoice.
-    // The amountPaidOnInvoice should only reflect actual receipt allocations.
+    // The amountPaidOnInvoice should reflect total allocations (receipts + credits).
     // The balance will be recalculated by verifyAndRecalculateInvoiceBalance after saving.
     // invoice.amountPaidOnInvoice should NOT be updated here.
 
