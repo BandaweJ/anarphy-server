@@ -181,7 +181,7 @@ export class PaymentController {
   }
 
   @Post('receipt')
-  @Roles(ROLES.reception, ROLES.auditor)
+  @Roles(ROLES.admin, ROLES.reception, ROLES.auditor)
   createReceipt(
     @Body() createReceiptDto: CreateReceiptDto,
     @GetUser() profile: TeachersEntity,
