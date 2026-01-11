@@ -151,20 +151,20 @@ export class StudentsService {
     createStudentDto: CreateStudentDto,
     profile: TeachersEntity | ParentsEntity | StudentsEntity,
   ): Promise<StudentsEntity> {
-    // Authorization check - Only admin, director, auditor can create students
+    // Authorization check - Only admin, director, auditor, and reception can create students
     switch (profile.role) {
       case ROLES.admin:
       case ROLES.director:
-      case ROLES.auditor: {
+      case ROLES.auditor:
+      case ROLES.reception: {
         // Allowed to create students
         break;
       }
       case ROLES.hod:
       case ROLES.teacher:
-      case ROLES.reception:
       case ROLES.parent:
       case ROLES.student: {
-        throw new UnauthorizedException('Only admins, directors, and auditors can add new students');
+        throw new UnauthorizedException('Only admins, directors, auditors, and reception can add new students');
       }
       default:
         throw new UnauthorizedException('Insufficient permissions');
