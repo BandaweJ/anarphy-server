@@ -70,6 +70,16 @@ export class SystemSettingsEntity {
   @Column({ default: true })
   smsNotificationsEnabled: boolean;
 
+  // Twilio/SMS Settings
+  @Column({ nullable: true })
+  twilioAccountSid: string;
+
+  @Column({ nullable: true })
+  twilioAuthToken: string;
+
+  @Column({ nullable: true })
+  twilioPhoneNumber: string; // Twilio phone number (e.g., +1234567890)
+
   // Session Settings
   @Column({ default: 30 })
   sessionTimeoutMinutes: number; // Session timeout in minutes

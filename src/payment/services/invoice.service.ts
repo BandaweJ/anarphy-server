@@ -2774,7 +2774,6 @@ export class InvoiceService {
           calculatedBalance,
           storedBalance,
           totalBill,
-          totalApplied,
           totalReceiptAllocated,
           totalCreditAllocated,
         },
