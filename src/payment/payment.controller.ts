@@ -22,6 +22,7 @@ import { TeachersEntity } from 'src/profiles/entities/teachers.entity';
 import { ParentsEntity } from 'src/profiles/entities/parents.entity';
 import { Request, Response } from 'express';
 import { CreateInvoiceDto } from './dtos/create-invoice.dto';
+import { CreateGroupInvoiceDto } from './dtos/create-group-invoice.dto';
 import { ReceiptEntity } from './entities/payment.entity';
 import { CreditTransactionQueryDto } from './dtos/credit-transaction-query.dto';
 import { Query } from '@nestjs/common';
@@ -219,6 +220,28 @@ export class PaymentController {
     res.end(pdfBuffer);
   }
 
+  @Get('group-invoice-pdf/:groupInvoiceNumber')
+  @Header('Content-Type', 'application/pdf')
+  @HasPermissions(PERMISSIONS.FINANCE.DOWNLOAD_INVOICE)
+  async getGroupInvoicePdf(
+    @Res() res: Response,
+    @Param('groupInvoiceNumber') groupInvoiceNumber: string,
+  ): Promise<any> {
+    const pdfBuffer = await this.paymentService.generateGroupInvoicePdf(
+      groupInvoiceNumber,
+    );
+
+    const filename = `group_invoice_${groupInvoiceNumber}.pdf`;
+
+    res.set({
+      'Content-Type': 'application/octet-stream',
+      'Content-Disposition': `attachment; filename="${filename}"`,
+      'Content-Length': pdfBuffer.length,
+    });
+
+    res.end(pdfBuffer);
+  }
+
   // More specific than /:num/:year if it were directly under /payment, but here it's under 'invoice'
   @Get('invoice/stats/:num/:year') // This specific sub-path is fine
   getInvoiceStats(
@@ -292,6 +315,28 @@ export class PaymentController {
       profile.email,
       req.ip || req.socket.remoteAddress,
     );
+  }
+
+  @Post('group-invoice')
+  @HasPermissions(PERMISSIONS.FINANCE.CREATE)
+  createGroupInvoice(
+    @Body() groupInvoiceDto: CreateGroupInvoiceDto,
+    @GetUser() profile: TeachersEntity,
+    @Req() req: Request,
+  ) {
+    return this.paymentService.createGroupInvoice(
+      groupInvoiceDto,
+      profile.email,
+      req.ip || req.socket.remoteAddress,
+    );
+  }
+
+  @Get('group-invoice/:groupInvoiceNumber')
+  @HasPermissions(PERMISSIONS.FINANCE.VIEW)
+  getGroupInvoice(
+    @Param('groupInvoiceNumber') groupInvoiceNumber: string,
+  ) {
+    return this.paymentService.getGroupInvoices(groupInvoiceNumber);
   }
 
   // STATEMENTS

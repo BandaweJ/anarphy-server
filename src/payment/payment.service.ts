@@ -14,6 +14,7 @@ import { ParentsEntity } from 'src/profiles/entities/parents.entity';
 import { CreateReceiptDto } from './dtos/createPayment.dto';
 import { ROLES } from 'src/auth/models/roles.enum';
 import { CreateInvoiceDto } from './dtos/create-invoice.dto';
+import { CreateGroupInvoiceDto } from './dtos/create-group-invoice.dto';
 import { InvoiceEntity } from './entities/invoice.entity';
 import { InvoiceStatsModel } from 'src/finance/models/invoice-stats.model';
 import { CreditTransactionEntity } from './entities/credit-transaction.entity';
@@ -329,6 +330,26 @@ export class PaymentService {
 
   async generateInvoicePdf(invoiceData: InvoiceEntity): Promise<Buffer> {
     return this.invoiceService.generateInvoicePdf(invoiceData);
+  }
+
+  async generateGroupInvoicePdf(groupInvoiceNumber: string): Promise<Buffer> {
+    return this.invoiceService.generateGroupInvoicePdf(groupInvoiceNumber);
+  }
+
+  async createGroupInvoice(
+    createGroupInvoiceDto: CreateGroupInvoiceDto,
+    performedBy?: string,
+    ipAddress?: string,
+  ): Promise<InvoiceEntity[]> {
+    return this.invoiceService.createGroupInvoice(
+      createGroupInvoiceDto,
+      performedBy,
+      ipAddress,
+    );
+  }
+
+  async getGroupInvoices(groupInvoiceNumber: string): Promise<InvoiceEntity[]> {
+    return this.invoiceService.getGroupInvoices(groupInvoiceNumber);
   }
 
   async generateReceiptPdf(receipt: ReceiptEntity): Promise<Buffer> {

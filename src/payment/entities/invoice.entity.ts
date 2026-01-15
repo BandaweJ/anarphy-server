@@ -89,6 +89,13 @@ export class InvoiceEntity {
   @Column({ default: false })
   isLegacy: boolean;
 
+  // Group invoice fields - for invoices that are part of a group (e.g., same donor/scholarship)
+  @Column({ nullable: true, comment: 'Group invoice number linking multiple student invoices together (e.g., GRP-2026-000001)' })
+  groupInvoiceNumber: string | null;
+
+  @Column({ nullable: true, comment: 'Optional note about donor/scholarship paying for this invoice' })
+  donorNote: string | null;
+
   // @Column({ type: 'decimal', precision: 10, scale: 2 })
   // totalPayments: number;
 

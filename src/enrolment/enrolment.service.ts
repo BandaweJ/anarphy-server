@@ -502,7 +502,7 @@ export class EnrolmentService {
 
     return this.enrolmentRepository.find({
       where: { student: { studentNumber } },
-      relations: ['student', 'fees'], // Include related entities
+      relations: ['student'], // Include related entities (removed 'fees' as it doesn't exist on EnrolEntity)
     });
   }
 

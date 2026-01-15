@@ -8,6 +8,8 @@ export class InvoiceResponseDto {
     voidedAt?: Date;
     voidedBy?: string;
   };
+  // For group invoices, include all invoices in the group
+  groupInvoices?: InvoiceEntity[];
 }
 
 

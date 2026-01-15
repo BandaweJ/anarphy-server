@@ -119,5 +119,30 @@ export class CreateInvoiceDto {
   @IsOptional()
   @IsNumber()
   id?: number;
+
+  // Group invoice fields
+  @ApiProperty({ 
+    description: 'Group invoice number linking multiple student invoices together (for group invoices)',
+    example: 'GRP-2026-000001',
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  groupInvoiceNumber?: string;
+
+  @ApiProperty({ 
+    description: 'Optional note about donor/scholarship paying for this invoice',
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  donorNote?: string;
+
+  @ApiProperty({ 
+    description: 'Flag to indicate if this is part of a group invoice creation',
+    required: false,
+  })
+  @IsOptional()
+  isGroupInvoice?: boolean;
 }
 

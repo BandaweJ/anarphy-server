@@ -47,6 +47,7 @@ import { sanitizeAmount, sanitizeOptionalAmount } from '../utils/sanitization.ut
 import { InvoiceResponseDto } from '../dtos/invoice-response.dto';
 import { NotificationService } from '../../notifications/services/notification.service';
 import { SystemSettingsService } from '../../system/services/system-settings.service';
+import { CreateGroupInvoiceDto } from '../dtos/create-group-invoice.dto';
 
 @Injectable()
 export class InvoiceService {
@@ -403,6 +404,14 @@ export class InvoiceService {
               ? new Date(invoice.invoiceDueDate)
               : new Date();
 
+            // Update group invoice fields if provided
+            if (invoice.groupInvoiceNumber !== undefined) {
+              invoiceToSave.groupInvoiceNumber = invoice.groupInvoiceNumber || null;
+            }
+            if (invoice.donorNote !== undefined) {
+              invoiceToSave.donorNote = invoice.donorNote || null;
+            }
+
             // For existing invoices, DO NOT manually update amountPaidOnInvoice here.
             // The amountPaidOnInvoice should be calculated from receipt allocations (NOT credits)
             // which will be done by verifyAndRecalculateInvoiceBalance after saving.
@@ -464,6 +473,14 @@ export class InvoiceService {
             invoiceToSave.totalBill = calculatedNetTotalBill;
             invoiceToSave.amountPaidOnInvoice = 0;
             invoiceToSave.isVoided = false; // Explicitly set to false for new invoices
+            
+            // Set group invoice fields if provided
+            if (invoice.groupInvoiceNumber) {
+              invoiceToSave.groupInvoiceNumber = invoice.groupInvoiceNumber;
+            }
+            if (invoice.donorNote) {
+              invoiceToSave.donorNote = invoice.donorNote;
+            }
 
             await this.applyStudentCreditToInvoice(
               invoiceToSave,
@@ -859,6 +876,131 @@ export class InvoiceService {
     }
 
     return finalInvoice;
+  }
+
+  /**
+   * Create a group invoice for multiple students (e.g., same donor/scholarship)
+   * Internally creates separate invoices but links them with a groupInvoiceNumber
+   */
+  async createGroupInvoice(
+    groupInvoiceDto: CreateGroupInvoiceDto,
+    performedBy?: string,
+    ipAddress?: string,
+  ): Promise<InvoiceEntity[]> {
+    if (!groupInvoiceDto.students || groupInvoiceDto.students.length === 0) {
+      throw new Error('At least one student is required for group invoice');
+    }
+
+    if (groupInvoiceDto.students.length === 1) {
+      // If only one student, just create a regular invoice
+      const student = groupInvoiceDto.students[0];
+      const invoiceDto: CreateInvoiceDto = {
+        studentNumber: student.studentNumber,
+        termNum: student.termNum,
+        year: student.year,
+        bills: student.bills,
+        donorNote: groupInvoiceDto.donorNote,
+        invoiceDate: groupInvoiceDto.invoiceDate,
+        invoiceDueDate: groupInvoiceDto.invoiceDueDate,
+      };
+      const invoice = await this.saveInvoice(invoiceDto, performedBy, ipAddress);
+      return [invoice];
+    }
+
+    // Generate group invoice number
+    const groupInvoiceNumber = await this.generateGroupInvoiceNumber();
+
+    logStructured(
+      this.logger,
+      'log',
+      'invoice.group.create.start',
+      'Creating group invoice',
+      {
+        groupInvoiceNumber,
+        studentCount: groupInvoiceDto.students.length,
+        donorNote: groupInvoiceDto.donorNote,
+      },
+    );
+
+    const createdInvoices: InvoiceEntity[] = [];
+
+    // Create invoice for each student in the group
+    for (const studentInvoice of groupInvoiceDto.students) {
+      // Log the bills structure before passing to saveInvoice
+      logStructured(
+        this.logger,
+        'log',
+        'invoice.group.billsBeforeSave',
+        'Bills structure before passing to saveInvoice',
+        {
+          studentNumber: studentInvoice.studentNumber,
+          billsCount: studentInvoice.bills?.length || 0,
+          bills: studentInvoice.bills?.map((b: any) => ({
+            hasFees: !!b.fees,
+            feeId: b.fees?.id,
+            feeAmount: b.fees?.amount,
+            hasStudent: !!b.student,
+            hasEnrol: !!b.enrol,
+            billKeys: Object.keys(b || {}),
+          })) || [],
+        },
+      );
+
+      // Transform bills to ensure they have the proper structure
+      // The bills come as plain objects from the frontend, but saveInvoice expects BillsEntity[]
+      // We'll pass them as-is since saveInvoice handles the transformation
+      const invoiceDto: CreateInvoiceDto = {
+        studentNumber: studentInvoice.studentNumber,
+        termNum: studentInvoice.termNum,
+        year: studentInvoice.year,
+        bills: studentInvoice.bills as any, // Cast to any to bypass type checking - service will handle transformation
+        groupInvoiceNumber,
+        donorNote: groupInvoiceDto.donorNote,
+        invoiceDate: groupInvoiceDto.invoiceDate,
+        invoiceDueDate: groupInvoiceDto.invoiceDueDate,
+        isGroupInvoice: true,
+      };
+
+      const invoice = await this.saveInvoice(invoiceDto, performedBy, ipAddress);
+      createdInvoices.push(invoice);
+    }
+
+    logStructured(
+      this.logger,
+      'log',
+      'invoice.group.create.success',
+      'Group invoice created successfully',
+      {
+        groupInvoiceNumber,
+        invoiceCount: createdInvoices.length,
+        invoiceNumbers: createdInvoices.map((inv) => inv.invoiceNumber),
+      },
+    );
+
+    return createdInvoices;
+  }
+
+  /**
+   * Get all invoices in a group by group invoice number
+   */
+  async getGroupInvoices(groupInvoiceNumber: string): Promise<InvoiceEntity[]> {
+    const invoices = await this.invoiceRepository.find({
+      where: { groupInvoiceNumber, isVoided: false },
+      relations: [
+        'student',
+        'enrol',
+        'bills',
+        'bills.fees',
+        'allocations',
+        'allocations.receipt',
+        'creditAllocations',
+        'creditAllocations.studentCredit',
+        'exemption',
+      ],
+      order: { invoiceNumber: 'ASC' },
+    });
+
+    return invoices;
   }
 
   /**
@@ -1967,6 +2109,290 @@ export class InvoiceService {
     });
   }
 
+  async generateGroupInvoicePdf(groupInvoiceNumber: string): Promise<Buffer> {
+    // Fetch all invoices in the group
+    const invoices = await this.getGroupInvoices(groupInvoiceNumber);
+    
+    if (!invoices || invoices.length === 0) {
+      throw new InvoiceNotFoundException(
+        `No invoices found for group ${groupInvoiceNumber}`,
+      );
+    }
+
+    const doc = new PDFDocument({
+      size: 'A4',
+      margins: { top: 50, bottom: 50, left: 50, right: 50 },
+    });
+
+    const stream = new Stream.PassThrough();
+    doc.pipe(stream);
+
+    const primaryBlue = '#2196f3';
+    const primaryBlueDark = '#1976d2';
+    const textPrimary = '#2c3e50';
+    const textSecondary = '#7f8c8d';
+    const successGreen = '#4caf50';
+    const warningOrange = '#ff9800';
+    const errorRed = '#f44336';
+    const accentGold = '#ffc107';
+
+    let currentY = 50;
+
+    // Fetch system settings
+    let systemSettings;
+    try {
+      systemSettings = await this.systemSettingsService.getSettings();
+    } catch (error) {
+      logStructured(this.logger, 'warn', 'group.invoice.pdf.settings.error', 'Failed to fetch system settings', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      systemSettings = null;
+    }
+
+    const companyName = (systemSettings?.schoolName?.trim()) || 'Junior High School';
+    const companyAddress = (systemSettings?.schoolAddress?.trim()) || '30588 Lundi Drive, Rhodene, Masvingo';
+    const companyPhone = (systemSettings?.schoolPhone?.trim()) || '+263 392 263 293 / +263 78 223 8026';
+    const companyEmail = (systemSettings?.schoolEmail?.trim()) || 'info@juniorhighschool.ac.zw';
+    const companyWebsite = (systemSettings?.schoolWebsite?.trim()) || 'www.juniorhighschool.ac.zw';
+
+    // Header
+    doc
+      .font('Helvetica-Bold')
+      .fontSize(20)
+      .fillColor(primaryBlue)
+      .text(companyName, 50, currentY, { align: 'center' });
+    currentY += 25;
+
+    doc
+      .font('Helvetica')
+      .fontSize(10)
+      .fillColor(textSecondary)
+      .text(companyAddress, 50, currentY, { align: 'center' });
+    currentY += 15;
+
+    doc
+      .fontSize(9)
+      .text(`Phone: ${companyPhone}`, 50, currentY, { align: 'center' });
+    currentY += 12;
+
+    if (companyEmail) {
+      doc.text(`Email: ${companyEmail}`, 50, currentY, { align: 'center' });
+      currentY += 12;
+    }
+
+    if (companyWebsite) {
+      doc.text(`Website: ${companyWebsite}`, 50, currentY, { align: 'center' });
+      currentY += 15;
+    }
+
+    // Group Invoice Title
+    currentY += 10;
+    doc
+      .font('Helvetica-Bold')
+      .fontSize(18)
+      .fillColor(textPrimary)
+      .text('GROUP INVOICE', 50, currentY, { align: 'center' });
+    currentY += 20;
+
+    // Group Invoice Number and Donor Note
+    doc
+      .font('Helvetica-Bold')
+      .fontSize(12)
+      .fillColor(textPrimary)
+      .text(`Group Invoice #: ${groupInvoiceNumber}`, 50, currentY);
+    currentY += 15;
+
+    if (invoices[0]?.donorNote) {
+      doc
+        .font('Helvetica')
+        .fontSize(10)
+        .fillColor(textSecondary)
+        .text(`Donor/Scholarship: ${invoices[0].donorNote}`, 50, currentY);
+      currentY += 15;
+    }
+
+    doc
+      .font('Helvetica')
+      .fontSize(10)
+      .fillColor(textSecondary)
+      .text(`Date: ${new Date().toLocaleDateString()}`, 50, currentY);
+    currentY += 20;
+
+    // Group Summary
+    const totalBill = invoices.reduce((sum, inv) => sum + Number(inv.totalBill || 0), 0);
+    const totalPaid = invoices.reduce((sum, inv) => sum + Number(inv.amountPaidOnInvoice || 0), 0);
+    const totalBalance = invoices.reduce((sum, inv) => sum + Number(inv.balance || 0), 0);
+
+    doc
+      .font('Helvetica-Bold')
+      .fontSize(11)
+      .fillColor(textPrimary)
+      .text('Group Summary', 50, currentY);
+    currentY += 15;
+
+    doc
+      .font('Helvetica')
+      .fontSize(10)
+      .fillColor(textPrimary)
+      .text(`Total Students: ${invoices.length}`, 50, currentY);
+    currentY += 12;
+
+    doc.text(`Total Bill: $${totalBill.toFixed(2)}`, 50, currentY);
+    currentY += 12;
+
+    doc.text(`Total Paid: $${totalPaid.toFixed(2)}`, 50, currentY);
+    currentY += 12;
+
+    doc
+      .font('Helvetica-Bold')
+      .text(`Total Balance: $${totalBalance.toFixed(2)}`, 50, currentY);
+    currentY += 25;
+
+    // Individual Student Invoices
+    for (let i = 0; i < invoices.length; i++) {
+      const invoice = invoices[i];
+
+      // Check if we need a new page
+      if (currentY > 700) {
+        doc.addPage();
+        currentY = 50;
+      }
+
+      // Student Invoice Header
+      doc
+        .font('Helvetica-Bold')
+        .fontSize(12)
+        .fillColor(primaryBlue)
+        .text(`Student ${i + 1} of ${invoices.length}`, 50, currentY);
+      currentY += 15;
+
+      doc
+        .font('Helvetica-Bold')
+        .fontSize(11)
+        .fillColor(textPrimary)
+        .text(`Invoice #: ${invoice.invoiceNumber}`, 50, currentY);
+      currentY += 12;
+
+      // Student Information
+      if (invoice.student) {
+        doc
+          .font('Helvetica')
+          .fontSize(10)
+          .fillColor(textPrimary)
+          .text(`Student: ${invoice.student.surname} ${invoice.student.name}`, 50, currentY);
+        currentY += 12;
+
+        doc
+          .fontSize(9)
+          .fillColor(textSecondary)
+          .text(`Student Number: ${invoice.student.studentNumber}`, 50, currentY);
+        currentY += 12;
+      }
+
+      if (invoice.enrol) {
+        doc
+          .fontSize(9)
+          .fillColor(textSecondary)
+          .text(`Class: ${invoice.enrol.name} | Term ${invoice.enrol.num}, ${invoice.enrol.year}`, 50, currentY);
+        currentY += 15;
+      }
+
+      // Bills Table Header
+      const tableTop = currentY;
+      const tableLeft = 50;
+      const colWidths = [300, 100];
+      const rowHeight = 20;
+
+      doc
+        .font('Helvetica-Bold')
+        .fontSize(9)
+        .fillColor(textPrimary)
+        .text('Description', tableLeft, tableTop)
+        .text('Amount', tableLeft + colWidths[0], tableTop, { align: 'right' });
+      currentY += rowHeight;
+
+      // Bills
+      if (invoice.bills && invoice.bills.length > 0) {
+        for (const bill of invoice.bills) {
+          if (currentY > 750) {
+            doc.addPage();
+            currentY = 50;
+          }
+
+          doc
+            .font('Helvetica')
+            .fontSize(9)
+            .fillColor(textPrimary)
+            .text(bill.fees?.description || bill.fees?.name || 'N/A', tableLeft, currentY)
+            .text(`$${Number(bill.fees?.amount || 0).toFixed(2)}`, tableLeft + colWidths[0], currentY, { align: 'right' });
+          currentY += rowHeight;
+        }
+      }
+
+      // Totals
+      currentY += 5;
+      doc
+        .moveTo(tableLeft, currentY)
+        .lineTo(tableLeft + colWidths[0] + colWidths[1], currentY)
+        .stroke();
+      currentY += 10;
+
+      doc
+        .font('Helvetica-Bold')
+        .fontSize(10)
+        .fillColor(textPrimary)
+        .text('Total Bill:', tableLeft, currentY)
+        .text(`$${Number(invoice.totalBill || 0).toFixed(2)}`, tableLeft + colWidths[0], currentY, { align: 'right' });
+      currentY += 12;
+
+      doc
+        .font('Helvetica')
+        .fontSize(9)
+        .fillColor(textSecondary)
+        .text('Amount Paid:', tableLeft, currentY)
+        .text(`$${Number(invoice.amountPaidOnInvoice || 0).toFixed(2)}`, tableLeft + colWidths[0], currentY, { align: 'right' });
+      currentY += 12;
+
+      doc
+        .font('Helvetica-Bold')
+        .fontSize(10)
+        .fillColor(textPrimary)
+        .text('Balance Due:', tableLeft, currentY)
+        .text(`$${Number(invoice.balance || 0).toFixed(2)}`, tableLeft + colWidths[0], currentY, { align: 'right' });
+      currentY += 20;
+
+      // Separator between students
+      if (i < invoices.length - 1) {
+        doc
+          .moveTo(tableLeft, currentY)
+          .lineTo(tableLeft + colWidths[0] + colWidths[1], currentY)
+          .strokeColor(textSecondary)
+          .stroke();
+        currentY += 20;
+      }
+    }
+
+    // Footer
+    const pageHeight = doc.page.height;
+    doc
+      .font('Helvetica-Oblique')
+      .fontSize(9)
+      .fillColor(textSecondary)
+      .text('Thank you for your business!', 50, pageHeight - 50, {
+        align: 'center',
+        width: doc.page.width - 100,
+      });
+
+    doc.end();
+
+    return new Promise<Buffer>((resolve, reject) => {
+      const chunks: Buffer[] = [];
+      stream.on('data', (chunk) => chunks.push(chunk));
+      stream.on('end', () => resolve(Buffer.concat(chunks)));
+      stream.on('error', reject);
+    });
+  }
+
   async generateInvoiceNumber(): Promise<string> {
     const year = new Date().getFullYear();
     const prefix = `INV-${year}-`;
@@ -1979,6 +2405,29 @@ export class InvoiceService {
     let sequence = 1;
     if (lastInvoice) {
       const parts = lastInvoice.invoiceNumber.split('-');
+      if (parts.length === 3) {
+        const lastSeq = parseInt(parts[2], 10);
+        if (!isNaN(lastSeq)) {
+          sequence = lastSeq + 1;
+        }
+      }
+    }
+
+    return `${prefix}${String(sequence).padStart(4, '0')}`;
+  }
+
+  async generateGroupInvoiceNumber(): Promise<string> {
+    const year = new Date().getFullYear();
+    const prefix = `GRP-${year}-`;
+
+    const lastGroupInvoice = await this.invoiceRepository.findOne({
+      where: { groupInvoiceNumber: Like(`${prefix}%`) },
+      order: { id: 'DESC' },
+    });
+
+    let sequence = 1;
+    if (lastGroupInvoice && lastGroupInvoice.groupInvoiceNumber) {
+      const parts = lastGroupInvoice.groupInvoiceNumber.split('-');
       if (parts.length === 3) {
         const lastSeq = parseInt(parts[2], 10);
         if (!isNaN(lastSeq)) {
