@@ -20,6 +20,8 @@ import { TeachersEntity } from 'src/profiles/entities/teachers.entity';
 import { ParentsEntity } from 'src/profiles/entities/parents.entity';
 import { StudentsEntity } from 'src/profiles/entities/students.entity';
 import { ApplicationStatus } from '../entities/application.entity';
+import { Res, Header } from '@nestjs/common';
+import { Response } from 'express';
 
 @ApiTags('applications')
 @Controller('applications')
@@ -131,6 +133,38 @@ export class ApplicationsController {
       updateDto,
       profile,
     );
+  }
+
+  /**
+   * Admin endpoint - Download application as PDF
+   */
+  @Get(':id/pdf')
+  @UseGuards(AuthGuard('jwt'))
+  @Header('Content-Type', 'application/pdf')
+  @ApiOperation({ summary: 'Download application as PDF (admin only)' })
+  @ApiResponse({
+    status: 200,
+    description: 'Application PDF generated successfully',
+  })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({ status: 404, description: 'Application not found' })
+  async downloadApplicationPdf(
+    @Param('id') id: string,
+    @GetUser() profile: TeachersEntity | ParentsEntity | StudentsEntity,
+    @Res() res: Response,
+  ): Promise<void> {
+    const application = await this.applicationsService.getApplicationById(id, profile);
+    const pdfBuffer = await this.applicationsService.generateApplicationPdf(application);
+
+    const filename = `application_${application.applicationId}_${application.name}_${application.surname}.pdf`;
+
+    res.set({
+      'Content-Type': 'application/octet-stream',
+      'Content-Disposition': `attachment; filename="${filename}"`,
+      'Content-Length': pdfBuffer.length,
+    });
+
+    res.end(pdfBuffer);
   }
 }
 

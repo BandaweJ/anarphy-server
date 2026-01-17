@@ -44,14 +44,13 @@ export class FinanceService {
   }
 
   async createFees(createFeesDto: CreateFeesDto, profile: TeachersEntity) {
-    switch (profile.role) {
-      case ROLES.admin:
-      case ROLES.teacher:
-      case ROLES.student:
-      case ROLES.parent:
-      case ROLES.hod: {
-        throw new UnauthorizedException('You are not allowed to manage fees');
-      }
+    // Allow admins and finance roles (reception, director, auditor) to manage fees
+    // Block only non-finance roles: teacher, student, parent, hod
+    if (profile.role !== ROLES.admin && 
+        profile.role !== ROLES.reception && 
+        profile.role !== ROLES.director && 
+        profile.role !== ROLES.auditor) {
+      throw new UnauthorizedException('You are not allowed to manage fees');
     }
     const { amount, description, name } = createFeesDto;
 
@@ -83,16 +82,15 @@ export class FinanceService {
     createFeesDto: CreateFeesDto,
     profile: TeachersEntity,
   ) {
-    switch (profile.role) {
-      case ROLES.admin:
-      case ROLES.parent:
-      case ROLES.hod:
-      case ROLES.student:
-      case ROLES.teacher: {
-        throw new UnauthorizedException(
-          'You are not authorised to change fees',
-        );
-      }
+    // Allow admins and finance roles (reception, director, auditor) to manage fees
+    // Block only non-finance roles: teacher, student, parent, hod
+    if (profile.role !== ROLES.admin && 
+        profile.role !== ROLES.reception && 
+        profile.role !== ROLES.director && 
+        profile.role !== ROLES.auditor) {
+      throw new UnauthorizedException(
+        'You are not authorised to change fees',
+      );
     }
     const { name } = createFeesDto;
     const fee = await this.findOneFee(id);

@@ -16,5 +16,6 @@ export enum FeesNames {
   juniorBoysUniform = 'juniorBoysUniform',
   seniorGirlsUniform = 'seniorGirlsUniform',
   seniorBoysUniform = 'seniorBoysUniform',
+  hostelsFee = 'hostelsFee',
   exemption = 'exemption',
 }
