@@ -54,6 +54,40 @@ export class EnrolmentService {
     private studentsService: StudentsService,
   ) {}
 
+  private async getPreferredOverviewTerm(): Promise<TermsEntity | null> {
+    const today = new Date();
+    const activeTerms = await this.termRepository.find({
+      where: {
+        startDate: LessThanOrEqual(today),
+        endDate: MoreThanOrEqual(today),
+      },
+      order: { year: 'DESC', num: 'DESC' },
+    });
+
+    // Prefer active regular term for dashboards/charts.
+    const activeRegular = activeTerms.find((t) => t.type === TermType.REGULAR);
+    if (activeRegular) {
+      return activeRegular;
+    }
+    if (activeTerms.length > 0) {
+      return activeTerms[0];
+    }
+
+    // If no active term, prefer latest regular term.
+    const latestRegular = await this.termRepository.findOne({
+      where: { type: TermType.REGULAR },
+      order: { year: 'DESC', num: 'DESC' },
+    });
+    if (latestRegular) {
+      return latestRegular;
+    }
+
+    // Final fallback: latest term of any type.
+    return this.termRepository.findOne({
+      order: { year: 'DESC', num: 'DESC' },
+    });
+  }
+
   private async resolveTerm(termId?: number, num?: number, year?: number): Promise<TermsEntity> {
     if (termId) {
       const byId = await this.termRepository.findOne({ where: { id: termId } });
@@ -72,9 +106,7 @@ export class EnrolmentService {
 
   async getAllClasses(): Promise<(ClassEntity & { studentCount: number })[]> {
     const classes = await this.classRepository.find();
-    
-    // Get current term if it exists
-    const currentTerm = await this.getCurrentTerm();
+    const currentTerm = await this.getPreferredOverviewTerm();
     
     // Count enrolments for each class
     const classesWithCounts = await Promise.all(
@@ -275,6 +307,22 @@ export class EnrolmentService {
 
     const term = await this.getOneTerm(num, year);
 
+    // Block deletion when term has any enrolments (both explicit termId and legacy num/year linkage).
+    const enrolmentCount = await this.enrolmentRepository
+      .createQueryBuilder('enrol')
+      .where('enrol.termId = :termId', { termId: term.id })
+      .orWhere('(enrol.num = :num AND enrol.year = :year)', {
+        num: term.num,
+        year: term.year,
+      })
+      .getCount();
+
+    if (enrolmentCount > 0) {
+      throw new BadRequestException(
+        `Cannot delete term ${term.num}/${term.year} because ${enrolmentCount} student enrolment(s) exist. Please move or unenrol students first.`,
+      );
+    }
+
     const result = await this.termRepository.remove(term);
 
     return result && 1;
@@ -389,15 +437,7 @@ export class EnrolmentService {
       girls: [],
     };
 
-    //create date object with current date
-    const today = new Date();
-    //use the terms repository to find a term where current date lies between its startDate and endDate
-    const currentTerm = await this.termRepository.findOne({
-      where: {
-        startDate: LessThan(today),
-        endDate: MoreThan(today),
-      },
-    });
+    const currentTerm = await this.getPreferredOverviewTerm();
     //get enrolments for that term
 
     if (currentTerm) {
@@ -678,7 +718,11 @@ export class EnrolmentService {
     if (!trm) {
       throw new NotFoundException('Term not found');
     } else {
-      return await this.termRepository.save({ ...term });
+      return await this.termRepository.save({
+        ...trm,
+        ...term,
+        type: term.type ?? trm.type ?? TermType.REGULAR,
+      });
     }
   }
 
