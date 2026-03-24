@@ -251,6 +251,11 @@ export class PaymentController {
     return this.paymentService.getInvoiceStats(num, year);
   }
 
+  @Get('invoice/stats/term/:termId')
+  getInvoiceStatsByTermId(@Param('termId', ParseIntPipe) termId: number) {
+    return this.paymentService.getInvoiceStatsByTermId(termId);
+  }
+
   @Get('invoice/:studentNumber/:num/:year')
   generateInvoice(
     @Param('studentNumber') studentNumber: string,
@@ -266,6 +271,19 @@ export class PaymentController {
     );
   }
 
+  @Get('invoice/:studentNumber/term/:termId')
+  generateInvoiceByTermId(
+    @Param('studentNumber') studentNumber: string,
+    @Param('termId', ParseIntPipe) termId: number,
+    @Query('includeVoided') includeVoided?: string,
+  ) {
+    return this.paymentService.getInvoiceByTermId(
+      studentNumber,
+      termId,
+      includeVoided === 'true',
+    );
+  }
+
   // 'invoice' + num + year
   @Get('invoice/:num/:year') // This path is now after the more specific 'invoice/:studentNumber/:num/:year'
   getTermInvoices(
@@ -273,6 +291,11 @@ export class PaymentController {
     @Param('year', ParseIntPipe) year: number,
   ) {
     return this.paymentService.getTermInvoices(num, year);
+  }
+
+  @Get('invoice/term/:termId')
+  getTermInvoicesByTermId(@Param('termId', ParseIntPipe) termId: number) {
+    return this.paymentService.getTermInvoicesByTermId(termId);
   }
 
   @Get('invoice')
@@ -302,6 +325,13 @@ export class PaymentController {
     @Param('year', ParseIntPipe) year: number,
   ) {
     return this.paymentService.getTermInvoicesForAudit(num, year);
+  }
+
+  @Get('invoice/audit/term-id/:termId')
+  getTermInvoicesForAuditByTermId(
+    @Param('termId', ParseIntPipe) termId: number,
+  ) {
+    return this.paymentService.getTermInvoicesForAuditByTermId(termId);
   }
 
   @Post('invoice')
@@ -367,6 +397,11 @@ export class PaymentController {
     @Param('year', ParseIntPipe) year: number,
   ) {
     return this.paymentService.getPaymentsInTerm(num, year);
+  }
+
+  @Get('term/id/:termId')
+  getPaymentsInTermId(@Param('termId', ParseIntPipe) termId: number) {
+    return this.paymentService.getPaymentsInTermId(termId);
   }
 
   @Get('year/:year') // Recommended prefix

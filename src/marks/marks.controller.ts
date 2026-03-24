@@ -96,6 +96,16 @@ export class MarksController {
     );
   }
 
+  @Get('/marks/term/:termId/:name/:examType')
+  getMarksByClassTermId(
+    @Param('termId') termId: number,
+    @Param('name') name: string,
+    @Param('examType') examType: string,
+    @GetUser() profile: StudentsEntity | ParentsEntity | TeachersEntity,
+  ) {
+    return this.marksService.getMarksByClassWithTermId(termId, name, examType, profile);
+  }
+
   @Get('/marks/:num/:year/:name/:subjectCode/:examType')
   getSubjectMarksInClass(
     @Param('num') num: number,
@@ -109,6 +119,23 @@ export class MarksController {
     return this.marksService.getSubjectMarksInClass(
       num,
       year,
+      name,
+      subjectCode,
+      examType,
+      profile,
+    );
+  }
+
+  @Get('/marks/term/:termId/:name/:subjectCode/:examType')
+  getSubjectMarksInClassByTermId(
+    @Param('termId') termId: number,
+    @Param('name') name: string,
+    @Param('subjectCode') subjectCode: string,
+    @Param('examType') examType: string,
+    @GetUser() profile: StudentsEntity | ParentsEntity | TeachersEntity,
+  ) {
+    return this.marksService.getSubjectMarksInClassWithTermId(
+      termId,
       name,
       subjectCode,
       examType,

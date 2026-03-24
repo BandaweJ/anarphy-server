@@ -12,6 +12,7 @@ export interface SystemSettingsDto {
   schoolEmail?: string;
   schoolWebsite?: string;
   schoolLogo?: string;
+  reportLetterheadPath?: string;
 
   // School Branding Colors
   primaryColor?: string;
@@ -115,6 +116,7 @@ export class SystemSettingsService {
       schoolEmail: '',
       schoolWebsite: '',
       schoolLogo: 'assets/anarphy_logo.png',
+      reportLetterheadPath: '',
       // Branding colors matching current theme
       primaryColor: '#2196f3', // Blue
       accentColor: '#ffc107', // Gold

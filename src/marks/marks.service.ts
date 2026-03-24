@@ -115,14 +115,22 @@ export class MarksService {
       }
     }
 
-    const { num, year, name, mark, comment, subject, student, examType } =
+    const { num, year, termId, name, mark, termMark, comment, subject, student, examType } =
       createMarkDto;
+
+    let resolvedNum = num;
+    let resolvedYear = year;
+    if (termId) {
+      const term = await this.enrolmentService.getOneTermById(termId);
+      resolvedNum = term.num;
+      resolvedYear = term.year;
+    }
 
     const found = await this.marksRepository.findOne({
       // where: { id },
       where: {
-        num,
-        year,
+        year: resolvedYear,
+        num: resolvedNum,
         name,
         examType,
         subject: { code: subject.code },
@@ -136,12 +144,15 @@ export class MarksService {
 
       //update the mark and comment only
       found.mark = mark;
+      found.termMark = termMark ?? null;
       found.comment = comment;
       const id = found.id;
 
       const result = await this.marksRepository.update(id, {
         mark,
+        termMark: termMark ?? null,
         comment,
+        termId: termId ?? found.termId ?? null,
       });
 
       if (result.affected) {
@@ -150,10 +161,12 @@ export class MarksService {
     } else {
       //new mark
       const record = new MarksEntity();
-      record.num = num;
-      record.year = year;
+      record.num = resolvedNum;
+      record.year = resolvedYear;
+      record.termId = termId;
       record.name = name;
       record.mark = mark;
+      record.termMark = termMark ?? null;
       record.comment = comment;
       record.subject = subject;
       record.student = student;
@@ -219,6 +232,16 @@ export class MarksService {
     //     },
     //     relations: ['subject', 'student'],
     //   });
+  }
+
+  async getMarksByClassWithTermId(
+    termId: number,
+    name: string,
+    examType: string,
+    profile: StudentsEntity | ParentsEntity | TeachersEntity,
+  ): Promise<MarksEntity[]> {
+    const term = await this.enrolmentService.getOneTermById(termId);
+    return this.getMarksbyClass(term.num, term.year, name, examType, profile);
   }
 
   async getSubjectMarksInClass(
@@ -301,6 +324,7 @@ export class MarksService {
       subjectMarks.map((mrk) => {
         if (mark.student.studentNumber === mrk.student.studentNumber) {
           mark.mark = mrk.mark;
+          mark.termMark = mrk.termMark;
           mark.comment = mrk.comment;
           mark.id = mrk.id;
           // mark.examType = mrk.examType;
@@ -311,6 +335,24 @@ export class MarksService {
     // console.log(classSubjectMarks[0]);
 
     return classSubjectMarks;
+  }
+
+  async getSubjectMarksInClassWithTermId(
+    termId: number,
+    name: string,
+    subjectCode: string,
+    examType: string,
+    profile: StudentsEntity | ParentsEntity | TeachersEntity,
+  ): Promise<MarksEntity[]> {
+    const term = await this.enrolmentService.getOneTermById(termId);
+    return this.getSubjectMarksInClass(
+      term.num,
+      term.year,
+      name,
+      subjectCode,
+      examType,
+      profile,
+    );
   }
 
   async getStudentMarks(studentNumber: string): Promise<MarksEntity[]> {

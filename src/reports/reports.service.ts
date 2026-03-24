@@ -4,6 +4,7 @@ import {
   InternalServerErrorException,
   NotFoundException,
   BadRequestException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { EnrolmentService } from '../enrolment/enrolment.service';
 import { MarksService } from '../marks/marks.service';
@@ -26,6 +27,9 @@ import * as path from 'path';
 import { ExamType } from 'src/marks/models/examtype.enum';
 import { NotificationService } from '../notifications/services/notification.service';
 import { ResourceByIdService } from '../resource-by-id/resource-by-id.service';
+import { SystemSettingsService } from '../system/services/system-settings.service';
+import { ROLES } from '../auth/models/roles.enum';
+import { ReportReleaseEntity } from './entities/report-release.entity';
 // import bannerImagePath from '../assets/images/banner3.png';
 
 @Injectable()
@@ -36,8 +40,11 @@ export class ReportsService {
     private gradingSystemService: GradingSystemService,
     @InjectRepository(ReportsEntity)
     private reportsRepository: Repository<ReportsEntity>,
+    @InjectRepository(ReportReleaseEntity)
+    private reportReleaseRepository: Repository<ReportReleaseEntity>,
     private notificationService: NotificationService,
     private resourceById: ResourceByIdService,
+    private systemSettingsService: SystemSettingsService,
   ) {}
 
   async generateReports(
@@ -138,6 +145,7 @@ export class ReportsService {
 
         subjectInfo.comment = subjectMark.comment;
         subjectInfo.mark = subjectMark.mark;
+        subjectInfo.termMark = subjectMark.termMark ?? null;
         subjectInfo.position = subjectMark.position;
         subjectInfo.subjectCode = subjectMark.subject.code;
         subjectInfo.subjectName = subjectMark.subject.name;
@@ -301,6 +309,16 @@ export class ReportsService {
     const filteredReps = this.filterStudentsWithMarks(reps);
 
     return filteredReps;
+  }
+
+  async generateReportsByTermId(
+    termId: number,
+    name: string,
+    examType: string,
+    profile: TeachersEntity | StudentsEntity | ParentsEntity,
+  ): Promise<ReportsModel[]> {
+    const term = await this.enrolmentService.getOneTermById(termId);
+    return this.generateReports(name, term.num, term.year, examType, profile);
   }
 
   // async generateReports(
@@ -581,6 +599,55 @@ export class ReportsService {
     else if (mark < 34) return 0;
   }
 
+  private canAccessUnreleased(profile: TeachersEntity | StudentsEntity | ParentsEntity): boolean {
+    return ![ROLES.student, ROLES.parent].includes(profile.role as ROLES);
+  }
+
+  private async isReleased(name: string, num: number, year: number, examType: string): Promise<boolean> {
+    const release = await this.reportReleaseRepository.findOne({
+      where: { name, num, year, examType },
+    });
+    return !!release?.released;
+  }
+
+  async getReportReleaseStatuses(
+    name?: string,
+    num?: number,
+    year?: number,
+    examType?: string,
+  ): Promise<ReportReleaseEntity[]> {
+    const where: any = {};
+    if (name) where.name = name;
+    if (num !== undefined) where.num = num;
+    if (year !== undefined) where.year = year;
+    if (examType) where.examType = examType;
+
+    return this.reportReleaseRepository.find({
+      where,
+      order: { year: 'DESC', num: 'DESC', name: 'ASC' },
+    });
+  }
+
+  async setReportReleaseStatus(
+    name: string,
+    num: number,
+    year: number,
+    examType: string,
+    released: boolean,
+    profile: TeachersEntity | StudentsEntity | ParentsEntity,
+  ): Promise<ReportReleaseEntity> {
+    const existing = await this.reportReleaseRepository.findOne({
+      where: { name, num, year, examType },
+    });
+
+    const entity = existing ?? this.reportReleaseRepository.create({ name, num, year, examType });
+    entity.released = released;
+    entity.releasedAt = released ? new Date() : null;
+    entity.releasedBy = released ? (profile as any)?.id ?? null : null;
+
+    return this.reportReleaseRepository.save(entity);
+  }
+
   async saveReports(
     num: number,
     year: number,
@@ -690,6 +757,17 @@ export class ReportsService {
     }
   }
 
+  async saveReportsByTermId(
+    termId: number,
+    name: string,
+    reports: ReportsModel[],
+    examType: ExamType,
+    profile: TeachersEntity | StudentsEntity | ParentsEntity,
+  ): Promise<ReportsEntity[]> {
+    const term = await this.enrolmentService.getOneTermById(termId);
+    return this.saveReports(term.num, term.year, name, reports, examType, profile);
+  }
+
   /**
    * Send email notifications for saved reports
    */
@@ -749,13 +827,43 @@ export class ReportsService {
     }
   }
 
-  async getStudentReports(studentNumber: string): Promise<ReportsEntity[]> {
+  async getStudentReports(
+    studentNumber: string,
+    profile?: TeachersEntity | StudentsEntity | ParentsEntity,
+  ): Promise<ReportsEntity[]> {
+    if (profile?.role === ROLES.student) {
+      const requesterStudentNumber = (profile as any).studentNumber ?? (profile as any).id;
+      if (requesterStudentNumber !== studentNumber) {
+        throw new ForbiddenException('Students can only view their own reports');
+      }
+    }
+
+    if (profile?.role === ROLES.parent) {
+      const requesterEmail = (profile as any).email ?? (profile as any).id;
+      const student = await this.resourceById.getStudentByStudentNumber(studentNumber);
+      if (!student?.parent || student.parent.email !== requesterEmail) {
+        throw new ForbiddenException('Parents can only view reports for their children');
+      }
+    }
+
     const reports = await this.reportsRepository.find({
       where: {
         studentNumber,
       },
     });
-    const normalizedReports = reports.map((rep) =>
+
+    const visibleReports =
+      !profile || this.canAccessUnreleased(profile)
+        ? reports
+        : (
+            await Promise.all(
+              reports.map(async (rep) =>
+                (await this.isReleased(rep.name, rep.num, rep.year, rep.examType)) ? rep : null,
+              ),
+            )
+          ).filter((rep) => !!rep);
+
+    const normalizedReports = (visibleReports as ReportsEntity[]).map((rep) =>
       this.normalizeReportStructure(rep),
     );
 
@@ -831,6 +939,17 @@ export class ReportsService {
     examType: string,
     profile: TeachersEntity | StudentsEntity | ParentsEntity,
   ): Promise<any[]> {
+    if (profile.role === ROLES.student || profile.role === ROLES.parent) {
+      throw new ForbiddenException('Use student report endpoint for learner/parent access');
+    }
+
+    if (!this.canAccessUnreleased(profile)) {
+      const released = await this.isReleased(name, num, year, examType);
+      if (!released) {
+        return [];
+      }
+    }
+
     let reports;
 
     if (examType) {
@@ -858,6 +977,16 @@ export class ReportsService {
     return normalizedReports;
   }
 
+  async viewReportsByTermId(
+    termId: number,
+    name: string,
+    examType: string,
+    profile: TeachersEntity | StudentsEntity | ParentsEntity,
+  ): Promise<any[]> {
+    const term = await this.enrolmentService.getOneTermById(termId);
+    return this.viewReports(name, term.num, term.year, examType, profile);
+  }
+
   async downloadReport(
     name,
     num,
@@ -866,6 +995,28 @@ export class ReportsService {
     studentNumber,
     profile: TeachersEntity | StudentsEntity | ParentsEntity,
   ) {
+    if (profile.role === ROLES.student) {
+      const requesterStudentNumber = (profile as any).studentNumber ?? (profile as any).id;
+      if (requesterStudentNumber !== studentNumber) {
+        throw new ForbiddenException('Students can only download their own reports');
+      }
+    }
+
+    if (profile.role === ROLES.parent) {
+      const requesterEmail = (profile as any).email ?? (profile as any).id;
+      const student = await this.resourceById.getStudentByStudentNumber(studentNumber);
+      if (!student?.parent || student.parent.email !== requesterEmail) {
+        throw new ForbiddenException('Parents can only download reports for their children');
+      }
+    }
+
+    if (!this.canAccessUnreleased(profile)) {
+      const released = await this.isReleased(name, num, year, examType);
+      if (!released) {
+        throw new ForbiddenException('Report is not released yet');
+      }
+    }
+
     const report = await this.reportsRepository.findOne({
       where: {
         name,
@@ -880,6 +1031,24 @@ export class ReportsService {
         `Report for student ${studentNumber} not found for term ${num}, ${year} for examtype ${examType}`,
       );
     return await this.generatePDF(report);
+  }
+
+  async downloadReportByTermId(
+    termId: number,
+    name: string,
+    examType: string,
+    studentNumber: string,
+    profile: TeachersEntity | StudentsEntity | ParentsEntity,
+  ) {
+    const term = await this.enrolmentService.getOneTermById(termId);
+    return this.downloadReport(
+      name,
+      term.num,
+      term.year,
+      examType,
+      studentNumber,
+      profile,
+    );
   }
 
   async generatePDF(
@@ -924,16 +1093,25 @@ export class ReportsService {
       });
 
       try {
-        const imgPath = path.join(__dirname, '../../public/banner.jpeg');
-        const imgBuffer = fs.readFileSync(imgPath);
+        const settings = await this.systemSettingsService.getSettings();
+        const configuredLetterhead = settings?.reportLetterheadPath || settings?.schoolLogo;
+        const fallbackLetterhead = path.join(__dirname, '../../public/report-letterhead.png');
+        const legacyFallback = path.join(__dirname, '../../public/banner.jpeg');
+        const selectedPath =
+          configuredLetterhead && fs.existsSync(configuredLetterhead)
+            ? configuredLetterhead
+            : fs.existsSync(fallbackLetterhead)
+              ? fallbackLetterhead
+              : legacyFallback;
+        const imgBuffer = fs.readFileSync(selectedPath);
 
         doc.image(imgBuffer, margin, padding, {
           width: columnWidth * 18,
-          height: rowHeight * 3, // Adjust the height as needed - padding ,
+          height: rowHeight * 3,
           align: 'center',
-        }); // Adjust position and size as needed
+        });
       } catch (err) {
-        console.log('Failed to add image: ', err);
+        console.log('Failed to add letterhead image: ', err);
       }
 
       doc
@@ -1072,7 +1250,7 @@ export class ReportsService {
         )
         .stroke()
         .text(
-          'Mean',
+          'Term',
           margin + columnWidth * 7 + columnWidth * 0.5 + smallPadding,
           rowHeight * 7 + padding,
         )
@@ -1084,7 +1262,7 @@ export class ReportsService {
         )
         .stroke()
         .text(
-          'Rank',
+          'Mean',
           margin + columnWidth * 9 + smallPadding,
           rowHeight * 7 + padding,
         )
@@ -1096,20 +1274,32 @@ export class ReportsService {
         )
         .stroke()
         .text(
-          'Grade',
+          'Rank',
           margin + columnWidth * 10.5 + smallPadding,
           rowHeight * 7 + padding,
         )
         .rect(
           margin + columnWidth * 12,
           rowHeight * 7,
-          columnWidth * 6,
+          columnWidth * 1.5,
+          rowHeight,
+        )
+        .stroke()
+        .text(
+          'Grade',
+          margin + columnWidth * 12 + smallPadding,
+          rowHeight * 7 + padding,
+        )
+        .rect(
+          margin + columnWidth * 13.5,
+          rowHeight * 7,
+          columnWidth * 4.5,
           rowHeight,
         )
         .stroke()
         .text(
           'Comment',
-          margin + columnWidth * 12 + smallPadding,
+          margin + columnWidth * 13.5 + smallPadding,
           rowHeight * 7 + padding,
         );
 
@@ -1163,7 +1353,7 @@ export class ReportsService {
           )
           .stroke()
           .text(
-            `${Math.round(report.report.subjectsTable[i].averageMark)}`,
+            `${report.report.subjectsTable[i].termMark ?? ''}`,
             margin + columnWidth * 7 + columnWidth * 0.5 + smallPadding,
             rowHeight * (7 + i + 1) + padding,
           )
@@ -1175,7 +1365,7 @@ export class ReportsService {
           )
           .stroke()
           .text(
-            `${report.report.subjectsTable[i].position}`,
+            `${Math.round(report.report.subjectsTable[i].averageMark)}`,
             margin + columnWidth * 9 + smallPadding,
             rowHeight * (7 + i + 1) + padding,
           )
@@ -1187,7 +1377,7 @@ export class ReportsService {
           )
           .stroke()
           .text(
-            `${report.report.subjectsTable[i].grade}`,
+            `${report.report.subjectsTable[i].position}`,
             // margin + columnWidth * 10.5 + smallPadding,
             margin + columnWidth * 10.5 + padding,
 
@@ -1196,13 +1386,25 @@ export class ReportsService {
           .rect(
             margin + columnWidth * 12,
             rowHeight * (7 + i + 1),
-            columnWidth * 6,
+            columnWidth * 1.5,
+            rowHeight,
+          )
+          .stroke()
+          .text(
+            `${report.report.subjectsTable[i].grade}`,
+            margin + columnWidth * 12 + padding,
+            rowHeight * (7 + i + 1) + padding,
+          )
+          .rect(
+            margin + columnWidth * 13.5,
+            rowHeight * (7 + i + 1),
+            columnWidth * 4.5,
             rowHeight,
           )
           .stroke()
           .text(
             `${report.report.subjectsTable[i].comment}`,
-            margin + columnWidth * 12 + smallPadding,
+            margin + columnWidth * 13.5 + smallPadding,
             rowHeight * (7 + i + 1) + smallPadding,
           );
       }
@@ -1279,13 +1481,25 @@ export class ReportsService {
         .rect(
           margin + columnWidth * 12,
           rowHeight * (7 + averageMarkRowNumber + 1),
-          columnWidth * 6,
+          columnWidth * 1.5,
           rowHeight,
         )
         .stroke()
         .text(
           ``,
           margin + columnWidth * 12 + smallPadding,
+          rowHeight * (7 + averageMarkRowNumber + 1) + padding,
+        )
+        .rect(
+          margin + columnWidth * 13.5,
+          rowHeight * (7 + averageMarkRowNumber + 1),
+          columnWidth * 4.5,
+          rowHeight,
+        )
+        .stroke()
+        .text(
+          ``,
+          margin + columnWidth * 13.5 + smallPadding,
           rowHeight * (7 + averageMarkRowNumber + 1) + padding,
         );
 

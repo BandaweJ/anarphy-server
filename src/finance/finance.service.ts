@@ -210,6 +210,11 @@ export class FinanceService {
     });
   }
 
+  async getBillsByTermId(termId: number): Promise<BillsEntity[]> {
+    const term = await this.enrolmentService.getOneTermById(termId);
+    return this.getBillsByEnrolment(term.num, term.year);
+  }
+
   async getStudentBillsByTerm(
     studentNumber: string,
     num: number,
@@ -253,6 +258,11 @@ export class FinanceService {
     }, 0);
 
     return totalBill;
+  }
+
+  async getTotalBillByTermId(termId: number): Promise<number> {
+    const term = await this.enrolmentService.getOneTermById(termId);
+    return this.getTotalBillByTerm(term.num, term.year);
   }
 
   async getTotalBillsByYear(year: number): Promise<number> {
@@ -307,6 +317,11 @@ export class FinanceService {
         ),
     );
     return uniqueStudentsNotBilled;
+  }
+
+  async findStudentsNotBilledForTermId(termId: number): Promise<EnrolEntity[]> {
+    const term = await this.enrolmentService.getOneTermById(termId);
+    return this.findStudentsNotBilledForTerm(term.num, term.year);
   }
 
 }

@@ -19,23 +19,27 @@ export class AnalyticsController {
     @Query('endDate') endDate?: string,
     @Query('termNum') termNum?: string,
     @Query('termYear') termYear?: string,
+    @Query('termId') termId?: string,
   ) {
     const start = startDate ? new Date(startDate) : undefined;
     const end = endDate ? new Date(endDate) : undefined;
     const num = termNum ? parseInt(termNum, 10) : undefined;
     const year = termYear ? parseInt(termYear, 10) : undefined;
+    const parsedTermId = termId ? parseInt(termId, 10) : undefined;
 
-    return await this.analyticsService.getAnalyticsSummary(start, end, num, year);
+    return await this.analyticsService.getAnalyticsSummary(start, end, num, year, parsedTermId);
   }
 
   @Get('enrollment')
   async getEnrollmentAnalytics(
     @Query('termNum') termNum?: string,
     @Query('termYear') termYear?: string,
+    @Query('termId') termId?: string,
   ) {
     const num = termNum ? parseInt(termNum, 10) : undefined;
     const year = termYear ? parseInt(termYear, 10) : undefined;
-    return await this.analyticsService.getEnrollmentAnalytics(num, year);
+    const parsedTermId = termId ? parseInt(termId, 10) : undefined;
+    return await this.analyticsService.getEnrollmentAnalytics(num, year, parsedTermId);
   }
 
   @Get('financial')
@@ -44,23 +48,27 @@ export class AnalyticsController {
     @Query('endDate') endDate?: string,
     @Query('termNum') termNum?: string,
     @Query('termYear') termYear?: string,
+    @Query('termId') termId?: string,
   ) {
     const start = startDate ? new Date(startDate) : undefined;
     const end = endDate ? new Date(endDate) : undefined;
     const num = termNum ? parseInt(termNum, 10) : undefined;
     const year = termYear ? parseInt(termYear, 10) : undefined;
+    const parsedTermId = termId ? parseInt(termId, 10) : undefined;
 
-    return await this.analyticsService.getFinancialAnalytics(start, end, num, year);
+    return await this.analyticsService.getFinancialAnalytics(start, end, num, year, parsedTermId);
   }
 
   @Get('academic')
   async getAcademicAnalytics(
     @Query('termNum') termNum?: string,
     @Query('termYear') termYear?: string,
+    @Query('termId') termId?: string,
   ) {
     const num = termNum ? parseInt(termNum, 10) : undefined;
     const year = termYear ? parseInt(termYear, 10) : undefined;
-    return await this.analyticsService.getAcademicAnalytics(num, year);
+    const parsedTermId = termId ? parseInt(termId, 10) : undefined;
+    return await this.analyticsService.getAcademicAnalytics(num, year, parsedTermId);
   }
 
   @Get('users')

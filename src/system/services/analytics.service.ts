@@ -98,11 +98,18 @@ export class AnalyticsService {
     endDate?: Date,
     termNum?: number,
     termYear?: number,
+    termId?: number,
   ): Promise<AnalyticsSummary> {
     // Get current term if not specified
     let currentTermNum = termNum;
     let currentTermYear = termYear;
     
+    if (termId) {
+      const term = await this.enrolmentService.getOneTermById(termId);
+      currentTermNum = term.num;
+      currentTermYear = term.year;
+    }
+
     if (!currentTermNum || !currentTermYear) {
       try {
         const currentTerm = await this.enrolmentService.getCurrentTerm();
@@ -137,7 +144,13 @@ export class AnalyticsService {
   async getEnrollmentAnalytics(
     termNum?: number,
     termYear?: number,
+    termId?: number,
   ): Promise<EnrollmentAnalytics> {
+    if (termId) {
+      const term = await this.enrolmentService.getOneTermById(termId);
+      termNum = term.num;
+      termYear = term.year;
+    }
     const totalStudents = await this.studentsRepository.count();
     
     // Use provided term or current year
@@ -224,7 +237,13 @@ export class AnalyticsService {
     endDate?: Date,
     termNum?: number,
     termYear?: number,
+    termId?: number,
   ): Promise<FinancialAnalytics> {
+    if (termId) {
+      const term = await this.enrolmentService.getOneTermById(termId);
+      termNum = term.num;
+      termYear = term.year;
+    }
     const queryBuilder = this.receiptRepository
       .createQueryBuilder('receipt')
       .leftJoin('receipt.enrol', 'enrol')
@@ -325,7 +344,13 @@ export class AnalyticsService {
   async getAcademicAnalytics(
     termNum?: number,
     termYear?: number,
+    termId?: number,
   ): Promise<AcademicAnalytics> {
+    if (termId) {
+      const term = await this.enrolmentService.getOneTermById(termId);
+      termNum = term.num;
+      termYear = term.year;
+    }
     const whereClause: any = {};
     if (termNum) {
       whereClause.num = termNum;

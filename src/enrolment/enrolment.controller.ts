@@ -93,6 +93,11 @@ export class EnrolmentController {
     return this.enrolmentService.getOneTerm(num, year);
   }
 
+  @Get('terms/id/:id')
+  getOneTermById(@Param('id', ParseIntPipe) id: number) {
+    return this.enrolmentService.getOneTermById(id);
+  }
+
   @Get('terms/current')
   getCurrentTerm() {
     return this.enrolmentService.getCurrentTerm();
@@ -189,6 +194,14 @@ export class EnrolmentController {
     return this.enrolmentService.getEnrolmentByClass(name, num, year);
   }
 
+  @Get('enrol/by-class/:name/term/:termId')
+  getEnrolmentByClassByTermId(
+    @Param('name') name: string,
+    @Param('termId', ParseIntPipe) termId: number,
+  ) {
+    return this.enrolmentService.getEnrolmentByClassByTermId(name, termId);
+  }
+
   @Get('enrol/summary/:num/:year')
   getTotalEnrolmentByTerm(
     @Param('num') num: number,
@@ -198,9 +211,19 @@ export class EnrolmentController {
     return this.enrolmentService.getTotalEnrolmentByTerm(num, year);
   }
 
+  @Get('enrol/summary/term/:termId')
+  getTotalEnrolmentByTermId(@Param('termId', ParseIntPipe) termId: number) {
+    return this.enrolmentService.getTotalEnrolmentByTermId(termId);
+  }
+
   @Get('enrol/:num/:year')
   getEnrolmentByTerm(@Param('num') num: number, @Param('year') year: number) {
     return this.enrolmentService.getEnrolmentByTerm(num, year);
+  }
+
+  @Get('enrol/by-term/:termId')
+  getEnrolmentByTermId(@Param('termId', ParseIntPipe) termId: number) {
+    return this.enrolmentService.getEnrolmentByTermId(termId);
   }
 
   @Delete('enrol/:id')

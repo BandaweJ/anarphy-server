@@ -2,6 +2,7 @@
 import { ApiProperty } from '@nestjs/swagger';
 import {
   IsArray,
+  IsNumber,
   IsDateString,
   IsNotEmpty,
   IsOptional,
@@ -24,17 +25,30 @@ export class GroupStudentInvoiceDto {
   studentNumber: string;
 
   @ApiProperty({ 
+    description: 'Term ID (preferred)',
+    example: 1,
+    required: false,
+  })
+  @IsOptional()
+  @IsNumber()
+  termId?: number;
+
+  @ApiProperty({ 
     description: 'Term number',
     example: 1,
+    required: false,
   })
-  @IsNotEmpty()
+  @IsOptional()
+  @IsNumber()
   termNum: number;
 
   @ApiProperty({ 
     description: 'Academic year',
     example: 2024,
+    required: false,
   })
-  @IsNotEmpty()
+  @IsOptional()
+  @IsNumber()
   year: number;
 
   @ApiProperty({ 

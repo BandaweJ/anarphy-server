@@ -31,6 +31,9 @@ export class SystemSettingsEntity {
   @Column({ nullable: true })
   schoolLogo: string; // URL or path to logo
 
+  @Column({ nullable: true })
+  reportLetterheadPath: string; // Absolute or server-local path to report letterhead image
+
   // School Branding Colors
   @Column({ nullable: true })
   primaryColor: string; // Primary brand color (e.g., #2196f3)

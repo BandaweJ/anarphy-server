@@ -24,6 +24,7 @@ import { CreditService } from './services/credit.service';
 import { InvoiceService } from './services/invoice.service';
 import { ReceiptService } from './services/receipt.service';
 import { logStructured } from './utils/logger.util';
+import { EnrolmentService } from 'src/enrolment/enrolment.service';
 @Injectable()
 export class PaymentService {
   private readonly logger = new Logger(PaymentService.name);
@@ -36,6 +37,7 @@ export class PaymentService {
     private readonly creditService: CreditService,
     private readonly invoiceService: InvoiceService,
     private readonly receiptService: ReceiptService,
+    private readonly enrolmentService: EnrolmentService,
   ) {}
 
   /**
@@ -212,6 +214,11 @@ export class PaymentService {
     return this.receiptService.getPaymentsInTerm(num, year);
   }
 
+  async getPaymentsInTermId(termId: number): Promise<ReceiptEntity[]> {
+    const term = await this.enrolmentService.getOneTermById(termId);
+    return this.getPaymentsInTerm(term.num, term.year);
+  }
+
   async getPaymentsByYear(year: number): Promise<ReceiptEntity[]> {
     return this.receiptService.getPaymentsByYear(year);
   }
@@ -242,6 +249,14 @@ export class PaymentService {
     return this.invoiceService.generateEmptyInvoice(studentNumber, num, year);
   }
 
+  async generateEmptyInvoiceByTermId(
+    studentNumber: string,
+    termId: number,
+  ): Promise<InvoiceEntity> {
+    const term = await this.enrolmentService.getOneTermById(termId);
+    return this.generateEmptyInvoice(studentNumber, term.num, term.year);
+  }
+
   /**
    * Applies the current student exemption to all existing invoices for that student.
    * This is called when an exemption is created, updated, or deactivated.
@@ -255,6 +270,11 @@ export class PaymentService {
     return this.invoiceService.getTermInvoices(num, year);
   }
 
+  async getTermInvoicesByTermId(termId: number): Promise<InvoiceEntity[]> {
+    const term = await this.enrolmentService.getOneTermById(termId);
+    return this.getTermInvoices(term.num, term.year);
+  }
+
   /**
    * Get all invoices for a term including voided ones (for audit purposes)
    * @param num - Term number
@@ -266,6 +286,11 @@ export class PaymentService {
     year: number,
   ): Promise<InvoiceEntity[]> {
     return this.invoiceService.getTermInvoicesForAudit(num, year);
+  }
+
+  async getTermInvoicesForAuditByTermId(termId: number): Promise<InvoiceEntity[]> {
+    const term = await this.enrolmentService.getOneTermById(termId);
+    return this.getTermInvoicesForAudit(term.num, term.year);
   }
 
   async getAllInvoices(): Promise<InvoiceEntity[]> {
@@ -309,6 +334,15 @@ export class PaymentService {
     );
   }
 
+  async getInvoiceByTermId(
+    studentNumber: string,
+    termId: number,
+    includeVoided: boolean = false,
+  ) {
+    const term = await this.enrolmentService.getOneTermById(termId);
+    return this.getInvoice(studentNumber, term.num, term.year, includeVoided);
+  }
+
   async getInvoiceByInvoiceNumber(invoiceNumber: string) {
     return this.invoiceService.getInvoiceByInvoiceNumber(invoiceNumber);
   }
@@ -318,6 +352,11 @@ export class PaymentService {
     year: number,
   ): Promise<InvoiceStatsModel[]> {
     return this.invoiceService.getInvoiceStats(num, year);
+  }
+
+  async getInvoiceStatsByTermId(termId: number): Promise<InvoiceStatsModel[]> {
+    const term = await this.enrolmentService.getOneTermById(termId);
+    return this.getInvoiceStats(term.num, term.year);
   }
 
   async updatePayment(

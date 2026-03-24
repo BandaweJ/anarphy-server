@@ -181,8 +181,9 @@ export class InvoiceService {
     }
 
     const studentNumber = invoice.studentNumber || invoice.student?.studentNumber;
-    const termNum = invoice.termNum || invoice.enrol?.num;
-    const year = invoice.year || invoice.enrol?.year;
+    let termNum = invoice.termNum || invoice.enrol?.num;
+    let year = invoice.year || invoice.enrol?.year;
+    const termId = invoice.termId || invoice.enrol?.termId;
 
     if (!studentNumber) {
       throw new MissingRequiredFieldException('studentNumber', [
@@ -190,8 +191,15 @@ export class InvoiceService {
       ]);
     }
 
+    if (termId && (termNum === undefined || year === undefined)) {
+      const resolvedTerm = await this.enrolmentService.getOneTermById(termId);
+      termNum = resolvedTerm.num;
+      year = resolvedTerm.year;
+    }
+
     if (termNum === undefined || year === undefined) {
       throw new MissingRequiredFieldException('termNum and year', [
+        'termId',
         'enrol entity',
       ]);
     }
@@ -243,6 +251,13 @@ export class InvoiceService {
           }
 
           let enrol = invoice.enrol;
+          if (!enrol && termId) {
+            const enrolments = await this.enrolmentService.getEnrolmentsByStudent(
+              studentNumber,
+              student,
+            );
+            enrol = enrolments.find((e) => e.termId === termId);
+          }
           if (!enrol && termNum !== undefined && year !== undefined) {
             const enrolments =
               await this.enrolmentService.getEnrolmentsByStudent(
@@ -896,6 +911,7 @@ export class InvoiceService {
       const student = groupInvoiceDto.students[0];
       const invoiceDto: CreateInvoiceDto = {
         studentNumber: student.studentNumber,
+        termId: student.termId,
         termNum: student.termNum,
         year: student.year,
         bills: student.bills,
@@ -951,6 +967,7 @@ export class InvoiceService {
       // We'll pass them as-is since saveInvoice handles the transformation
       const invoiceDto: CreateInvoiceDto = {
         studentNumber: studentInvoice.studentNumber,
+        termId: studentInvoice.termId,
         termNum: studentInvoice.termNum,
         year: studentInvoice.year,
         bills: studentInvoice.bills as any, // Cast to any to bypass type checking - service will handle transformation

@@ -87,6 +87,11 @@ export class FinanceController {
     return this.financeService.getBillsByEnrolment(num, year);
   }
 
+  @Get('billing/term/:termId')
+  getBillsByTermId(@Param('termId', ParseIntPipe) termId: number) {
+    return this.financeService.getBillsByTermId(termId);
+  }
+
   @Get('billing/:year')
   getBillsByYear(@Param('year', ParseIntPipe) year: number) {
     return this.financeService.getBillsByYear;
@@ -100,6 +105,11 @@ export class FinanceController {
     return this.financeService.getTotalBillByTerm(num, year);
   }
 
+  @Get('billing/total/term/:termId')
+  getTotalBillByTermId(@Param('termId', ParseIntPipe) termId: number) {
+    return this.financeService.getTotalBillByTermId(termId);
+  }
+
   @Get('billing/total/:year')
   getTotalBillByYear(@Param('year', ParseIntPipe) year: number) {
     return this.financeService.getTotalBillsByYear(year);
@@ -111,6 +121,11 @@ export class FinanceController {
     @Param('year', ParseIntPipe) year: number,
   ) {
     return this.financeService.findStudentsNotBilledForTerm(num, year);
+  }
+
+  @Get('billing/tobill/term/:termId')
+  getStudentsNotBilledForTermId(@Param('termId', ParseIntPipe) termId: number) {
+    return this.financeService.findStudentsNotBilledForTermId(termId);
   }
 
   // @Post('balance')

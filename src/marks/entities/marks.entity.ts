@@ -20,11 +20,17 @@ export class MarksEntity {
   @Column()
   year: number;
 
+  @Column({ nullable: true })
+  termId?: number;
+
   @Column()
   name: string;
 
   @Column()
   mark: number;
+
+  @Column({ nullable: true })
+  termMark?: number;
 
   @Column()
   comment: string;

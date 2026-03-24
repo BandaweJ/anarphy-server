@@ -15,6 +15,11 @@ export class CreateMarkDto {
   @IsNotEmpty()
   year: number;
 
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsNumber()
+  termId?: number;
+
   @ApiProperty()
   @IsString()
   @IsNotEmpty()
@@ -24,6 +29,11 @@ export class CreateMarkDto {
   @IsNumber()
   @IsNotEmpty()
   mark: number;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsNumber()
+  termMark?: number;
 
   @ApiProperty()
   @IsString()

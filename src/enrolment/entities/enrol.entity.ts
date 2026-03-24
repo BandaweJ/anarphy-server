@@ -2,17 +2,20 @@
 import {
   Column,
   Entity,
+  JoinColumn,
   ManyToOne,
   OneToMany,
   OneToOne,
   PrimaryColumn,
   PrimaryGeneratedColumn,
+  RelationId,
 } from 'typeorm';
 import { StudentsEntity } from '../../profiles/entities/students.entity';
 import { Residence } from '../models/residence.model';
 import { BillsEntity } from 'src/finance/entities/bills.entity';
 import { InvoiceEntity } from 'src/payment/entities/invoice.entity';
 import { ReceiptEntity } from 'src/payment/entities/payment.entity';
+import { TermsEntity } from './term.entity';
 
 @Entity('enrol')
 export class EnrolEntity {
@@ -27,6 +30,16 @@ export class EnrolEntity {
 
   @Column()
   year: number;
+
+  @ManyToOne(() => TermsEntity, (term) => term.enrolments, {
+    nullable: true,
+    onDelete: 'SET NULL',
+  })
+  @JoinColumn({ name: 'termId' })
+  term?: TermsEntity;
+
+  @RelationId((enrol: EnrolEntity) => enrol.term)
+  termId?: number;
 
   @Column({ default: 'Boarder' })
   residence: Residence;

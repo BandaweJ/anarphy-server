@@ -24,6 +24,11 @@ export class EnrolDto {
   @IsNotEmpty()
   year: number;
 
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsNumber()
+  termId?: number;
+
   @ApiProperty()
   @IsOptional()
   residence: Residence;

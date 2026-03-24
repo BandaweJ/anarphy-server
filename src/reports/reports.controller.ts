@@ -5,6 +5,7 @@ import {
   Get,
   Param,
   Post,
+  Query,
   Res,
   UseGuards,
   BadRequestException,
@@ -23,6 +24,7 @@ import { ExamType } from 'src/marks/models/examtype.enum';
 import { PermissionsGuard } from 'src/auth/guards/permissions.guard';
 import { HasPermissions } from 'src/auth/decorators/has-permissions.decorator';
 import { PERMISSIONS } from 'src/auth/models/permissions.constants';
+import { SetReportReleaseDto } from './dtos/report-release.dto';
 
 @Controller('reports')
 @UseGuards(AuthGuard(), PermissionsGuard)
@@ -48,6 +50,17 @@ export class ReportsController {
     );
   }
 
+  @Get('/generate/term/:termId/:name/:examType')
+  @HasPermissions(PERMISSIONS.REPORTS.GENERATE)
+  generateReportsByTermId(
+    @Param('termId') termId: number,
+    @Param('name') name: string,
+    @Param('examType') examType: string,
+    @GetUser() profile,
+  ) {
+    return this.reportsService.generateReportsByTermId(termId, name, examType, profile);
+  }
+
   @Post('/save/:name/:num/:year/:examType')
   @HasPermissions(PERMISSIONS.REPORTS.SAVE)
   saveReports(
@@ -67,6 +80,18 @@ export class ReportsController {
       examType,
       profile,
     );
+  }
+
+  @Post('/save/term/:termId/:name/:examType')
+  @HasPermissions(PERMISSIONS.REPORTS.SAVE)
+  saveReportsByTermId(
+    @Param('termId') termId: number,
+    @Param('name') name: string,
+    @Param('examType') examType: ExamType,
+    @Body() reports: ReportsModel[],
+    @GetUser() profile,
+  ) {
+    return this.reportsService.saveReportsByTermId(termId, name, reports, examType, profile);
   }
 
   @Post('/save/head-comment')
@@ -119,9 +144,54 @@ export class ReportsController {
     return this.reportsService.viewReports(name, num, year, examType, profile);
   }
 
+  @Get('/view/term/:termId/:name/:examType')
+  viewReportsByTermId(
+    @Param('termId') termId: number,
+    @Param('name') name: string,
+    @Param('examType') examType: string,
+    @GetUser() profile,
+  ) {
+    return this.reportsService.viewReportsByTermId(termId, name, examType, profile);
+  }
+
   @Get('/view/:studentNumber')
-  getStudentReports(@Param('studentNumber') studentNumber: string) {
-    return this.reportsService.getStudentReports(studentNumber);
+  getStudentReports(
+    @Param('studentNumber') studentNumber: string,
+    @GetUser() profile: TeachersEntity | StudentsEntity | ParentsEntity,
+  ) {
+    return this.reportsService.getStudentReports(studentNumber, profile);
+  }
+
+  @Get('/release')
+  @HasPermissions(PERMISSIONS.REPORTS.VIEW)
+  getReportReleaseStatus(
+    @Query('name') name?: string,
+    @Query('num') num?: string,
+    @Query('year') year?: string,
+    @Query('examType') examType?: string,
+  ) {
+    return this.reportsService.getReportReleaseStatuses(
+      name,
+      num ? parseInt(num, 10) : undefined,
+      year ? parseInt(year, 10) : undefined,
+      examType,
+    );
+  }
+
+  @Post('/release')
+  @HasPermissions(PERMISSIONS.REPORTS.SAVE)
+  setReportReleaseStatus(
+    @Body() payload: SetReportReleaseDto,
+    @GetUser() profile: TeachersEntity | StudentsEntity | ParentsEntity,
+  ) {
+    return this.reportsService.setReportReleaseStatus(
+      payload.name,
+      payload.num,
+      payload.year,
+      payload.examType,
+      payload.released,
+      profile,
+    );
   }
 
   // @Get('view')
@@ -163,6 +233,33 @@ export class ReportsController {
     );
 
     // const filename = `${studentNumber}_${name}_${num}_${year}_report.pdf`;
+
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="${result.filename}"`,
+      'Content-Length': result.buffer.length,
+    });
+
+    res.end(result.buffer);
+  }
+
+  @Get('/pdf/term/:termId/:name/:examType/:studentNumber/')
+  @HasPermissions(PERMISSIONS.REPORTS.DOWNLOAD)
+  async getOnePDFByTermId(
+    @Param('termId') termId: number,
+    @Param('name') name: string,
+    @Param('examType') examType: string,
+    @Param('studentNumber') studentNumber: string,
+    @GetUser() profile: TeachersEntity | StudentsEntity | ParentsEntity,
+    @Res() res: Response,
+  ): Promise<void> {
+    const result = await this.reportsService.downloadReportByTermId(
+      termId,
+      name,
+      examType,
+      studentNumber,
+      profile,
+    );
 
     res.set({
       'Content-Type': 'application/pdf',

@@ -7,13 +7,14 @@ import { MarksModule } from 'src/marks/marks.module';
 import { EnrolmentModule } from '../enrolment/enrolment.module';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ReportsEntity } from './entities/report.entity';
+import { ReportReleaseEntity } from './entities/report-release.entity';
 import { SystemModule } from '../system/system.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { ResourceByIdModule } from '../resource-by-id/resource-by-id.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([ReportsEntity]),
+    TypeOrmModule.forFeature([ReportsEntity, ReportReleaseEntity]),
     AuthModule,
     MarksModule,
     EnrolmentModule,

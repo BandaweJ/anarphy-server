@@ -23,7 +23,7 @@ import { ROLES } from '../auth/models/roles.enum';
 
 import { NotFoundException } from '@nestjs/common';
 import { CreateTermDto } from './dtos/create-term.dto';
-import { TermsEntity } from './entities/term.entity';
+import { TermType, TermsEntity } from './entities/term.entity';
 
 import { EnrolDto } from './dtos/enrol.dto';
 import { EnrolEntity } from './entities/enrol.entity';
@@ -53,6 +53,22 @@ export class EnrolmentService {
 
     private studentsService: StudentsService,
   ) {}
+
+  private async resolveTerm(termId?: number, num?: number, year?: number): Promise<TermsEntity> {
+    if (termId) {
+      const byId = await this.termRepository.findOne({ where: { id: termId } });
+      if (!byId) {
+        throw new NotFoundException(`Term with id ${termId} not found`);
+      }
+      return byId;
+    }
+
+    if (num === undefined || year === undefined) {
+      throw new BadRequestException('Either termId or both num and year are required');
+    }
+
+    return this.getOneTerm(num, year);
+  }
 
   async getAllClasses(): Promise<(ClassEntity & { studentCount: number })[]> {
     const classes = await this.classRepository.find();
@@ -186,7 +202,10 @@ export class EnrolmentService {
         throw new UnauthorizedException('Only admins can create a new term');
       }
     }
-    return await this.termRepository.save(createTermDto);
+    return await this.termRepository.save({
+      ...createTermDto,
+      type: createTermDto.type ?? TermType.REGULAR,
+    });
   }
 
   async getAllTerms(): Promise<TermsEntity[]> {
@@ -228,6 +247,16 @@ export class EnrolmentService {
     return term;
   }
 
+  async getOneTermById(id: number): Promise<TermsEntity> {
+    const term = await this.termRepository.findOne({
+      where: { id },
+    });
+    if (!term) {
+      throw new NotFoundException(`Term with id ${id} not found`);
+    }
+    return term;
+  }
+
   async deleteTerm(
     num: number,
     year: number,
@@ -261,21 +290,25 @@ export class EnrolmentService {
     updateEnrolDto: UpdateEnrolDto,
     profile: TeachersEntity,
   ) {
-    const { student, name, num, year, residence } = updateEnrolDto;
+    const { student, name, num, year, termId, residence } = updateEnrolDto;
+    const term = await this.resolveTerm(termId, num, year);
 
     const enrol = await this.enrolmentRepository.findOne({
       where: {
         name,
-        num,
-        year,
+        num: term.num,
+        year: term.year,
         student: {
           studentNumber: student.studentNumber,
         },
       },
-      relations: ['student'],
+      relations: ['student', 'term'],
     });
 
     enrol.residence = residence;
+    enrol.term = term;
+    enrol.num = term.num;
+    enrol.year = term.year;
 
     return await this.enrolmentRepository.save(enrol);
   }
@@ -298,12 +331,14 @@ export class EnrolmentService {
     const enrolEntities: EnrolEntity[] = [];
 
     for (const enrolDto of enrolDtos) {
-      const { name, num, year, residence, student } = enrolDto;
+      const { name, num, year, termId, residence, student } = enrolDto;
+      const term = await this.resolveTerm(termId, num, year);
 
       const enrolEntity = await this.enrolmentRepository.create({
         name,
-        num,
-        year,
+        num: term.num,
+        year: term.year,
+        term,
         residence,
         student,
       });
@@ -311,8 +346,8 @@ export class EnrolmentService {
       const existingEnrol = await this.enrolmentRepository.findOne({
         where: {
           name,
-          num,
-          year,
+          num: term.num,
+          year: term.year,
           student: {
             studentNumber: student.studentNumber,
           },
@@ -440,6 +475,14 @@ export class EnrolmentService {
     });
   }
 
+  async getEnrolmentByClassByTermId(
+    name: string,
+    termId: number,
+  ): Promise<EnrolEntity[]> {
+    const term = await this.getOneTermById(termId);
+    return this.getEnrolmentByClass(name, term.num, term.year);
+  }
+
   async getTotalEnrolmentByTerm(
     num: number,
     year: number,
@@ -477,6 +520,11 @@ export class EnrolmentService {
     return summary;
   }
 
+  async getTotalEnrolmentByTermId(termId: number): Promise<StudentsSummary> {
+    const term = await this.getOneTermById(termId);
+    return this.getTotalEnrolmentByTerm(term.num, term.year);
+  }
+
   async getEnrolmentByTerm(num: number, year: number): Promise<EnrolEntity[]> {
     return await this.enrolmentRepository.find({
       where: {
@@ -485,6 +533,11 @@ export class EnrolmentService {
       },
       relations: ['student'],
     });
+  }
+
+  async getEnrolmentByTermId(termId: number): Promise<EnrolEntity[]> {
+    const term = await this.getOneTermById(termId);
+    return this.getEnrolmentByTerm(term.num, term.year);
   }
 
   async getEnrolmentsByStudent(
@@ -524,6 +577,7 @@ export class EnrolmentService {
   async addTerm(term: CreateTermDto) {
     return await this.termRepository.save({
       ...term,
+      type: term.type ?? TermType.REGULAR,
     });
   }
 
@@ -588,6 +642,13 @@ export class EnrolmentService {
       // Preserve the residence from the source enrolment
       newEnrol.residence = enrol.residence;
       return newEnrol;
+    });
+
+    const destinationTerm = await this.resolveTerm(undefined, toNum, toYear);
+    newClassEnrolment.forEach((enrol) => {
+      enrol.term = destinationTerm;
+      enrol.num = destinationTerm.num;
+      enrol.year = destinationTerm.year;
     });
 
     if (newClassEnrolment.length === 0) {

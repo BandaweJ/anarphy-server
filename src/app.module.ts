@@ -50,6 +50,13 @@ import { LoggingMiddleware } from './common/middleware/logging.middleware';
         const dbPassword = configService.get<string>('DB_PASSWORD');
         const dbName = configService.get<string>('DB_NAME');
 
+        const synchronizeOverride = configService.get<string>('DB_SYNCHRONIZE');
+        const isProduction = process.env.NODE_ENV === 'production';
+        const synchronize =
+          synchronizeOverride !== undefined
+            ? synchronizeOverride === 'true'
+            : !isProduction;
+
         // Construct the TypeORM options object dynamically
         const typeOrmOptions: TypeOrmModuleOptions = {
           type: 'postgres', // Database type
@@ -70,7 +77,7 @@ import { LoggingMiddleware } from './common/middleware/logging.middleware';
           // Set to true only for development for automatic schema creation.
           // synchronize: process.env.NODE_ENV === 'development',
           
-          synchronize: true, // TEMPORARY: Auto-create schema on first deployment
+          synchronize,
 
           // Optional: Enable logging in development for debugging queries
           logging: process.env.NODE_ENV === 'development' ? ['error', 'warn'] : false, // Only log errors and warnings
