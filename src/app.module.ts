@@ -26,6 +26,7 @@ import { ContinuousAssessmentModule } from './continuous-assessment/continuous-a
 import { ApplicationsModule } from './applications/applications.module';
 import { Logger, OnModuleInit, MiddlewareConsumer, NestModule } from '@nestjs/common';
 import { LoggingMiddleware } from './common/middleware/logging.middleware';
+import { AIModule } from './ai/ai.module';
 
 @Module({
   imports: [
@@ -117,6 +118,7 @@ import { LoggingMiddleware } from './common/middleware/logging.middleware';
     MessagingModule,
     ContinuousAssessmentModule,
     ApplicationsModule,
+    AIModule,
   ],
   controllers: [AppController],
   providers: [
