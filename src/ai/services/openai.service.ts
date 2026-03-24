@@ -28,6 +28,9 @@ export interface CommentGenerationResponse {
 export class OpenAIService {
   private readonly logger = new Logger(OpenAIService.name);
   private openai?: OpenAI;
+  /** Fits report cards and PDF tables; keep in sync with prompt. */
+  private readonly maxWordsPerComment = 7;
+  private readonly minWordsPerComment = 4;
 
   constructor(private readonly configService: ConfigService) {
     const apiKey = this.configService.get<string>('OPENAI_API_KEY');
@@ -56,7 +59,7 @@ export class OpenAIService {
           request.mark,
           maxMark,
           request.subject,
-        ),
+        ).map((c) => this.normalizeCommentWords(c)),
         source: 'fallback',
         error: 'OpenAI not configured',
         appliedTone,
@@ -73,15 +76,15 @@ export class OpenAIService {
           {
             role: 'system',
             content:
-              'You are an experienced secondary school teacher writing report comments. Keep comments human, specific, respectful, and suitable for Zimbabwean school report language.',
+              'You write very short subject comments for report cards and PDF tables. Each line must be a single compact phrase with no learner names.',
           },
           {
             role: 'user',
             content: this.buildPrompt(request, percentage, appliedTone),
           },
         ],
-        max_tokens: 240,
-        temperature: 0.85,
+        max_tokens: 160,
+        temperature: 0.8,
       });
 
       const content = completion.choices[0]?.message?.content?.trim();
@@ -89,7 +92,9 @@ export class OpenAIService {
         throw new Error('No response from model');
       }
 
-      const comments = this.parseComments(content);
+      let comments = this.parseComments(content);
+      comments = this.stripLearnerNamesFromComments(comments, request.studentName);
+      comments = comments.map((c) => this.normalizeCommentWords(c));
       if (comments.length < 5) {
         const fallback = this.getFallbackComments(
           request.mark,
@@ -107,7 +112,7 @@ export class OpenAIService {
         }
         return {
           success: true,
-          comments: merged,
+          comments: merged.map((c) => this.normalizeCommentWords(c)),
           source: 'openai',
           appliedTone,
         };
@@ -115,7 +120,7 @@ export class OpenAIService {
 
       return {
         success: true,
-        comments: comments.slice(0, 5),
+        comments: comments.slice(0, 5).map((c) => this.normalizeCommentWords(c)),
         source: 'openai',
         appliedTone,
       };
@@ -131,7 +136,7 @@ export class OpenAIService {
           request.mark,
           maxMark,
           request.subject,
-        ),
+        ).map((c) => this.normalizeCommentWords(c)),
         source: 'fallback',
         error: error instanceof Error ? error.message : 'unknown error',
         appliedTone,
@@ -171,7 +176,6 @@ export class OpenAIService {
     tone: CommentTone,
   ): string {
     const subject = request.subject || 'the subject';
-    const student = request.studentName ? `Student: ${request.studentName}.` : '';
     const className = request.className ? `Class: ${request.className}.` : '';
     const examType = request.examType ? `Assessment: ${request.examType}.` : '';
     const toneLine = this.toneGuidance(tone);
@@ -186,7 +190,7 @@ export class OpenAIService {
         : 'weak';
 
     return `
-Create 5 realistic teacher comments for marks entry.
+Create 5 very short teacher comments for a printed report card (narrow columns).
 
 Context:
 - Mark: ${request.mark}${request.maxMark ? `/${request.maxMark}` : ''}
@@ -195,19 +199,59 @@ Context:
 - Performance band: ${performanceBand}
 - Tone (auto from mark): ${tone}
 ${toneLine}
-${student}
 ${className}
 ${examType}
 
 Rules:
-- Write exactly 5 comments as a numbered list.
-- Each comment should be 10-20 words.
-- Comments must be human, specific, and aligned to the score.
-- Avoid generic praise only; include a clear next step where useful.
+- Write exactly 5 comments as a numbered list (1. 2. 3. 4. 5.).
+- Each comment: at most 7 words. Aim for about 6–7 words.
+- Do not use any person's name, nickname, or initials. Do not address the learner as "you" — use neutral phrasing about performance in ${subject}.
+- Be specific to the subject and the score band; avoid empty praise.
 - Do not mention AI.
-- Avoid slang, emojis, or exaggerated language.
-- Keep grammar clean and teacher-professional.
+- Avoid slang and emojis.
     `.trim();
+  }
+
+  /** Trims to max word count for PDF/report layout. */
+  private normalizeCommentWords(text: string): string {
+    const words = text
+      .trim()
+      .split(/\s+/)
+      .filter((w) => w.length > 0);
+    if (words.length <= this.maxWordsPerComment) {
+      const s = words.join(' ');
+      return s.charAt(0).toUpperCase() + s.slice(1);
+    }
+    const clipped = words.slice(0, this.maxWordsPerComment).join(' ');
+    return clipped.charAt(0).toUpperCase() + clipped.slice(1);
+  }
+
+  /** Removes accidental name tokens if the client sent studentName. */
+  private stripLearnerNamesFromComments(
+    comments: string[],
+    studentName?: string,
+  ): string[] {
+    if (!studentName?.trim()) {
+      return comments;
+    }
+    const tokens = [
+      ...new Set(
+        studentName
+          .trim()
+          .split(/\s+/)
+          .filter((t) => t.length > 1),
+      ),
+    ];
+    return comments
+      .map((line) => {
+        let s = line;
+        for (const t of tokens) {
+          const esc = t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          s = s.replace(new RegExp(`\\b${esc}\\b`, 'gi'), '').trim();
+        }
+        return s.replace(/\s+/g, ' ').replace(/^[,;]\s*|\s*[,;]$/g, '').trim();
+      })
+      .filter((l) => l.length > 0);
   }
 
   private parseComments(raw: string): string[] {
@@ -216,13 +260,22 @@ Rules:
       .map((line) => line.replace(/^[-*]?\s*\d*[\).\-\s]*/, '').trim())
       .filter((line) => line.length > 0)
       .map((line) => line.replace(/\s+/g, ' ').replace(/[.;:,!?]+$/g, '').trim())
-      .filter((line) => line.length >= 12 && line.length <= 200)
+      .filter((line) => line.length > 0 && line.length <= 220)
       .filter((line) => !/[#*_`]/.test(line));
 
     const unique: string[] = [];
     for (const line of lines) {
-      if (!unique.some((x) => x.toLowerCase() === line.toLowerCase())) {
-        unique.push(line.charAt(0).toUpperCase() + line.slice(1));
+      const wc = line.split(/\s+/).filter((w) => w.length > 0).length;
+      if (wc < this.minWordsPerComment) {
+        continue;
+      }
+      const clipped = this.normalizeCommentWords(line);
+      const wc2 = clipped.split(/\s+/).filter((w) => w.length > 0).length;
+      if (wc2 < this.minWordsPerComment) {
+        continue;
+      }
+      if (!unique.some((x) => x.toLowerCase() === clipped.toLowerCase())) {
+        unique.push(clipped);
       }
       if (unique.length >= 5) {
         break;
@@ -231,40 +284,48 @@ Rules:
     return unique;
   }
 
+  /** One word where possible so fallbacks stay within ~7 words for PDF columns. */
+  private shortSubjectLabel(subject?: string): string {
+    if (!subject?.trim()) {
+      return 'subject';
+    }
+    return subject.trim().split(/\s+/)[0] || 'subject';
+  }
+
   private getFallbackComments(
     mark: number,
     maxMark: number = 100,
     subject?: string,
   ): string[] {
     const percentage = (mark / maxMark) * 100;
-    const topic = subject || 'the subject';
+    const s = this.shortSubjectLabel(subject);
 
     if (percentage >= 80) {
       return [
-        `Excellent command of ${topic}; keep stretching yourself with more challenging tasks each week`,
-        `Strong performance in ${topic}; continue refining details to maintain this high standard`,
-        `You are performing very well in ${topic}; stay consistent and support peers during class activities`,
-        `Impressive understanding of ${topic}; keep practicing exam technique to protect your top marks`,
-        `Great progress in ${topic}; build on this by completing extension exercises regularly`,
+        `Strong ${s} work; maintain precision.`,
+        `Excellent ${s} grasp; extend challenge.`,
+        `High ${s} standard; refine technique.`,
+        `Secure ${s} skills; sustain depth.`,
+        `Top ${s} performance; deepen stretch.`,
       ];
     }
 
     if (percentage >= 50) {
       return [
-        `Fair performance in ${topic}; revise key concepts daily to improve confidence and accuracy`,
-        `You are showing potential in ${topic}; focus on corrections and ask questions when unsure`,
-        `A reasonable effort in ${topic}; more structured practice will help you improve steadily`,
-        `Progress is visible in ${topic}; strengthen weak areas through regular topic-by-topic revision`,
-        `You can do better in ${topic}; increase practice and pay close attention to feedback`,
+        `Fair ${s} progress; consolidate basics.`,
+        `Steady ${s} effort; improve accuracy.`,
+        `Adequate ${s} standard; practice regularly.`,
+        `Room to improve; focus corrections.`,
+        `Developing ${s} skills; strengthen topics.`,
       ];
     }
 
     return [
-      `Performance in ${topic} is below expectation; begin with basics and practice consistently each day`,
-      `You need stronger foundations in ${topic}; complete guided exercises and seek help early`,
-      `Results in ${topic} require improvement; revise core ideas and correct every mistake carefully`,
-      `Work harder in ${topic}; improve attendance, concentration, and daily revision habits`,
-      `Current performance in ${topic} is low; regular support and focused practice will raise your score`,
+      `Weak ${s} foundation; rebuild basics.`,
+      `Low ${s} mark; revise core ideas.`,
+      `Below standard; seek support early.`,
+      `Needs improvement; attend and revise.`,
+      `Requires practice; fix errors promptly.`,
     ];
   }
 }
