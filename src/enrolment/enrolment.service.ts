@@ -306,8 +306,35 @@ export class EnrolmentService {
     }
 
     const term = await this.getOneTerm(num, year);
+    await this.ensureTermHasNoEnrolments(term);
 
-    // Block deletion when term has any enrolments (both explicit termId and legacy num/year linkage).
+    const result = await this.termRepository.remove(term);
+
+    return result && 1;
+  }
+
+  async deleteTermById(
+    id: number,
+    profile: TeachersEntity | ParentsEntity | StudentsEntity,
+  ): Promise<number> {
+    switch (profile.role) {
+      case ROLES.hod:
+      case ROLES.parent:
+      case ROLES.reception:
+      case ROLES.student:
+      case ROLES.teacher: {
+        throw new UnauthorizedException('Only admins allowed to delete Terms');
+      }
+    }
+
+    const term = await this.getOneTermById(id);
+    await this.ensureTermHasNoEnrolments(term);
+
+    const result = await this.termRepository.remove(term);
+    return result && 1;
+  }
+
+  private async ensureTermHasNoEnrolments(term: TermsEntity): Promise<void> {
     const enrolmentCount = await this.enrolmentRepository
       .createQueryBuilder('enrol')
       .where('enrol.termId = :termId', { termId: term.id })
@@ -322,10 +349,6 @@ export class EnrolmentService {
         `Cannot delete term ${term.num}/${term.year} because ${enrolmentCount} student enrolment(s) exist. Please move or unenrol students first.`,
       );
     }
-
-    const result = await this.termRepository.remove(term);
-
-    return result && 1;
   }
 
   //Enrolmnt

@@ -141,6 +141,14 @@ export class EnrolmentController {
     return this.enrolmentService.deleteTerm(num, year, profile);
   }
 
+  @Delete('terms/id/:id')
+  deleteTermById(
+    @Param('id', ParseIntPipe) id: number,
+    @GetUser() profile: TeachersEntity | StudentsEntity | ParentsEntity,
+  ) {
+    return this.enrolmentService.deleteTermById(id, profile);
+  }
+
   @Post('enrol')
   enrolStudent(
     @Body() enrolsDto: EnrolDto[],

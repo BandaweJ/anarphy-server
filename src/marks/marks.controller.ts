@@ -5,6 +5,7 @@ import {
   Delete,
   Get,
   Param,
+  ParseIntPipe,
   Patch,
   Post,
   UseGuards,
@@ -79,10 +80,20 @@ export class MarksController {
     return this.marksService.getAllMarks(profile);
   }
 
+  @Get('/marks/term/:termId/:name/:examType')
+  getMarksByClassTermId(
+    @Param('termId', ParseIntPipe) termId: number,
+    @Param('name') name: string,
+    @Param('examType') examType: string,
+    @GetUser() profile: StudentsEntity | ParentsEntity | TeachersEntity,
+  ) {
+    return this.marksService.getMarksByClassWithTermId(termId, name, examType, profile);
+  }
+
   @Get('/marks/:num/:year/:name/:examType')
   getMarksByClass(
-    @Param('num') num: number,
-    @Param('year') year: number,
+    @Param('num', ParseIntPipe) num: number,
+    @Param('year', ParseIntPipe) year: number,
     @Param('name') name: string,
     @Param('examType') examType: string,
     @GetUser() profile: StudentsEntity | ParentsEntity | TeachersEntity,
@@ -96,20 +107,27 @@ export class MarksController {
     );
   }
 
-  @Get('/marks/term/:termId/:name/:examType')
-  getMarksByClassTermId(
-    @Param('termId') termId: number,
+  @Get('/marks/term/:termId/:name/:subjectCode/:examType')
+  getSubjectMarksInClassByTermId(
+    @Param('termId', ParseIntPipe) termId: number,
     @Param('name') name: string,
+    @Param('subjectCode') subjectCode: string,
     @Param('examType') examType: string,
     @GetUser() profile: StudentsEntity | ParentsEntity | TeachersEntity,
   ) {
-    return this.marksService.getMarksByClassWithTermId(termId, name, examType, profile);
+    return this.marksService.getSubjectMarksInClassWithTermId(
+      termId,
+      name,
+      subjectCode,
+      examType,
+      profile,
+    );
   }
 
   @Get('/marks/:num/:year/:name/:subjectCode/:examType')
   getSubjectMarksInClass(
-    @Param('num') num: number,
-    @Param('year') year: number,
+    @Param('num', ParseIntPipe) num: number,
+    @Param('year', ParseIntPipe) year: number,
     @Param('name') name: string,
     @Param('subjectCode') subjectCode: string,
     @Param('examType') examType: string,
@@ -119,23 +137,6 @@ export class MarksController {
     return this.marksService.getSubjectMarksInClass(
       num,
       year,
-      name,
-      subjectCode,
-      examType,
-      profile,
-    );
-  }
-
-  @Get('/marks/term/:termId/:name/:subjectCode/:examType')
-  getSubjectMarksInClassByTermId(
-    @Param('termId') termId: number,
-    @Param('name') name: string,
-    @Param('subjectCode') subjectCode: string,
-    @Param('examType') examType: string,
-    @GetUser() profile: StudentsEntity | ParentsEntity | TeachersEntity,
-  ) {
-    return this.marksService.getSubjectMarksInClassWithTermId(
-      termId,
       name,
       subjectCode,
       examType,
