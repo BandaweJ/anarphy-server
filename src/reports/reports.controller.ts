@@ -4,6 +4,7 @@ import {
   Controller,
   Get,
   Param,
+  ParseIntPipe,
   Post,
   Query,
   Res,
@@ -31,12 +32,23 @@ import { SetReportReleaseDto } from './dtos/report-release.dto';
 export class ReportsController {
   constructor(private reportsService: ReportsService) {}
 
+  @Get('/generate/term/:termId/:name/:examType')
+  @HasPermissions(PERMISSIONS.REPORTS.GENERATE)
+  generateReportsByTermId(
+    @Param('termId', ParseIntPipe) termId: number,
+    @Param('name') name: string,
+    @Param('examType') examType: string,
+    @GetUser() profile,
+  ) {
+    return this.reportsService.generateReportsByTermId(termId, name, examType, profile);
+  }
+
   @Get('/generate/:name/:num/:year/:examType')
   @HasPermissions(PERMISSIONS.REPORTS.GENERATE)
   generateReports(
     @Param('name') name: string,
-    @Param('num') num: number,
-    @Param('year') year: number,
+    @Param('num', ParseIntPipe) num: number,
+    @Param('year', ParseIntPipe) year: number,
     @Param('examType') examType: string,
     @GetUser() profile,
   ) {
@@ -50,24 +62,24 @@ export class ReportsController {
     );
   }
 
-  @Get('/generate/term/:termId/:name/:examType')
-  @HasPermissions(PERMISSIONS.REPORTS.GENERATE)
-  generateReportsByTermId(
-    @Param('termId') termId: number,
+  @Post('/save/term/:termId/:name/:examType')
+  @HasPermissions(PERMISSIONS.REPORTS.SAVE)
+  saveReportsByTermId(
+    @Param('termId', ParseIntPipe) termId: number,
     @Param('name') name: string,
-    @Param('examType') examType: string,
+    @Param('examType') examType: ExamType,
+    @Body() reports: ReportsModel[],
     @GetUser() profile,
   ) {
-    return this.reportsService.generateReportsByTermId(termId, name, examType, profile);
+    return this.reportsService.saveReportsByTermId(termId, name, reports, examType, profile);
   }
 
   @Post('/save/:name/:num/:year/:examType')
   @HasPermissions(PERMISSIONS.REPORTS.SAVE)
   saveReports(
     @Param('name') name: string,
-
-    @Param('num') num: number,
-    @Param('year') year: number,
+    @Param('num', ParseIntPipe) num: number,
+    @Param('year', ParseIntPipe) year: number,
     @Param('examType') examType: ExamType,
     @Body() reports: ReportsModel[],
     @GetUser() profile,
@@ -80,18 +92,6 @@ export class ReportsController {
       examType,
       profile,
     );
-  }
-
-  @Post('/save/term/:termId/:name/:examType')
-  @HasPermissions(PERMISSIONS.REPORTS.SAVE)
-  saveReportsByTermId(
-    @Param('termId') termId: number,
-    @Param('name') name: string,
-    @Param('examType') examType: ExamType,
-    @Body() reports: ReportsModel[],
-    @GetUser() profile,
-  ) {
-    return this.reportsService.saveReportsByTermId(termId, name, reports, examType, profile);
   }
 
   @Post('/save/head-comment')
@@ -132,26 +132,25 @@ export class ReportsController {
     return this.reportsService.saveFormTeacherComment(comment, profile);
   }
 
-  @Get('/view/:name/:num/:year/:examType')
-  viewReports(
-    @Param('name') name: string,
-
-    @Param('num') num: number,
-    @Param('year') year: number,
-    @Param('examType') examType: string,
-    @GetUser() profile,
-  ) {
-    return this.reportsService.viewReports(name, num, year, examType, profile);
-  }
-
   @Get('/view/term/:termId/:name/:examType')
   viewReportsByTermId(
-    @Param('termId') termId: number,
+    @Param('termId', ParseIntPipe) termId: number,
     @Param('name') name: string,
     @Param('examType') examType: string,
     @GetUser() profile,
   ) {
     return this.reportsService.viewReportsByTermId(termId, name, examType, profile);
+  }
+
+  @Get('/view/:name/:num/:year/:examType')
+  viewReports(
+    @Param('name') name: string,
+    @Param('num', ParseIntPipe) num: number,
+    @Param('year', ParseIntPipe) year: number,
+    @Param('examType') examType: string,
+    @GetUser() profile,
+  ) {
+    return this.reportsService.viewReports(name, num, year, examType, profile);
   }
 
   @Get('/view/:studentNumber')
@@ -211,28 +210,23 @@ export class ReportsController {
   //   );
   // }
 
-  @Get('/pdf/:name/:num/:year/:examType/:studentNumber/')
+  @Get('/pdf/term/:termId/:name/:examType/:studentNumber/')
   @HasPermissions(PERMISSIONS.REPORTS.DOWNLOAD)
-  async getOnePDF(
+  async getOnePDFByTermId(
+    @Param('termId', ParseIntPipe) termId: number,
     @Param('name') name: string,
-    @Param('num') num: number,
-    @Param('year') year: number,
     @Param('examType') examType: string,
     @Param('studentNumber') studentNumber: string,
-
     @GetUser() profile: TeachersEntity | StudentsEntity | ParentsEntity,
     @Res() res: Response,
   ): Promise<void> {
-    const result = await this.reportsService.downloadReport(
+    const result = await this.reportsService.downloadReportByTermId(
+      termId,
       name,
-      num,
-      year,
       examType,
       studentNumber,
       profile,
     );
-
-    // const filename = `${studentNumber}_${name}_${num}_${year}_report.pdf`;
 
     res.set({
       'Content-Type': 'application/pdf',
@@ -243,19 +237,22 @@ export class ReportsController {
     res.end(result.buffer);
   }
 
-  @Get('/pdf/term/:termId/:name/:examType/:studentNumber/')
+  @Get('/pdf/:name/:num/:year/:examType/:studentNumber/')
   @HasPermissions(PERMISSIONS.REPORTS.DOWNLOAD)
-  async getOnePDFByTermId(
-    @Param('termId') termId: number,
+  async getOnePDF(
     @Param('name') name: string,
+    @Param('num', ParseIntPipe) num: number,
+    @Param('year', ParseIntPipe) year: number,
     @Param('examType') examType: string,
     @Param('studentNumber') studentNumber: string,
+
     @GetUser() profile: TeachersEntity | StudentsEntity | ParentsEntity,
     @Res() res: Response,
   ): Promise<void> {
-    const result = await this.reportsService.downloadReportByTermId(
-      termId,
+    const result = await this.reportsService.downloadReport(
       name,
+      num,
+      year,
       examType,
       studentNumber,
       profile,
