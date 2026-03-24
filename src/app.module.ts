@@ -10,6 +10,7 @@ import { EnrolmentModule } from './enrolment/enrolment.module';
 import { MarksModule } from './marks/marks.module';
 import { ReportsModule } from './reports/reports.module';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { join } from 'path';
 import { FinanceModule } from './finance/finance.module';
 import { PaymentModule } from './payment/payment.module';
 import { DashboardModule } from './dashboard/dashboard.module';
@@ -51,11 +52,16 @@ import { LoggingMiddleware } from './common/middleware/logging.middleware';
         const dbName = configService.get<string>('DB_NAME');
 
         const synchronizeOverride = configService.get<string>('DB_SYNCHRONIZE');
+        const migrationsRunOverride = configService.get<string>('DB_MIGRATIONS_RUN');
         const isProduction = process.env.NODE_ENV === 'production';
         const synchronize =
           synchronizeOverride !== undefined
             ? synchronizeOverride === 'true'
             : !isProduction;
+        const migrationsRun =
+          migrationsRunOverride !== undefined
+            ? migrationsRunOverride === 'true'
+            : isProduction;
 
         // Construct the TypeORM options object dynamically
         const typeOrmOptions: TypeOrmModuleOptions = {
@@ -71,6 +77,9 @@ import { LoggingMiddleware } from './common/middleware/logging.middleware';
           database: databaseUrl ? undefined : dbName,
           // Your existing options:
           autoLoadEntities: true, // Keep this as you had it
+          migrations: [join(__dirname, '../migrations/*.{ts,js}')],
+          migrationsTableName: 'typeorm_migrations',
+          migrationsRun,
 
           // IMPORTANT: synchronize should be false in production!
           // Use migrations for production deployments.

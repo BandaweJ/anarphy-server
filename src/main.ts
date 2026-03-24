@@ -28,15 +28,41 @@ async function bootstrap() {
   );
   // console.log(process.env.DB_PASSWORD);
 
-  // Define your allowed origins dynamically or explicitly
-  const allowedOrigins = [
-    'http://localhost:4200', // Local development frontend
-    'https://anarphy-portal.vercel.app', // Production frontend on Vercel
-    // Add more origins here if needed (e.g., staging environments)
+  const configuredOrigins = (process.env.CORS_ALLOWED_ORIGINS || '')
+    .split(',')
+    .map((o) => o.trim())
+    .filter(Boolean);
+
+  const defaultAllowedOrigins = [
+    'http://localhost:4200',
+    'http://127.0.0.1:4200',
+    'https://anarphy-portal.vercel.app',
   ];
 
+  const allowedOrigins = configuredOrigins.length
+    ? configuredOrigins
+    : defaultAllowedOrigins;
+
   app.enableCors({
-    origin: allowedOrigins, // or a list of allowed origins
+    origin: (origin, callback) => {
+      // Allow same-origin/non-browser requests (curl, health checks, server-to-server)
+      if (!origin) {
+        return callback(null, true);
+      }
+
+      const normalizedOrigin = origin.trim().replace(/\/$/, '');
+      const isExactMatch = allowedOrigins.some(
+        (allowed) => normalizedOrigin === allowed.replace(/\/$/, ''),
+      );
+      const isVercelPreview = /^https:\/\/anarphy-portal-.*\.vercel\.app$/.test(
+        normalizedOrigin,
+      );
+
+      if (isExactMatch || isVercelPreview) {
+        return callback(null, true);
+      }
+      return callback(new Error(`Origin not allowed by CORS: ${origin}`), false);
+    },
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
     credentials: true,
     exposedHeaders: ['Content-Disposition'],
