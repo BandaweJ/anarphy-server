@@ -12,10 +12,18 @@ export class TermIdAndReleaseMigration1764022000000 implements MigrationInterfac
     await queryRunner.query(`
       DO $$
       BEGIN
+        -- Postgres allows at most ONE primary key constraint per table.
+        -- Some environments/databases may already have a primary key on "terms"
+        -- (possibly with a different constraint name). In that case, adding another
+        -- PK would fail with:
+        --   "multiple primary keys for table \"terms\" are not allowed"
+        --
+        -- Therefore, only add PK_terms_id if no primary key exists yet.
         IF NOT EXISTS (
           SELECT 1
           FROM pg_constraint
-          WHERE conname = 'PK_terms_id'
+          WHERE conrelid = 'terms'::regclass
+            AND contype = 'p'
         ) THEN
           ALTER TABLE "terms" ADD CONSTRAINT "PK_terms_id" PRIMARY KEY ("id");
         END IF;
@@ -142,6 +150,7 @@ export class TermIdAndReleaseMigration1764022000000 implements MigrationInterfac
     await queryRunner.query(`ALTER TABLE IF EXISTS "reports" DROP COLUMN IF EXISTS "termId"`);
     await queryRunner.query(`ALTER TABLE IF EXISTS "enrol" DROP CONSTRAINT IF EXISTS "FK_enrol_termId_terms_id"`);
     await queryRunner.query(`DROP INDEX IF EXISTS "IDX_enrol_termId"`);
+    await queryRunner.query(`ALTER TABLE IF EXISTS "terms" DROP CONSTRAINT IF EXISTS "PK_terms_id"`);
     await queryRunner.query(`ALTER TABLE IF EXISTS "enrol" DROP COLUMN IF EXISTS "termId"`);
     await queryRunner.query(`DROP INDEX IF EXISTS "IDX_terms_num_year_unique"`);
   }
