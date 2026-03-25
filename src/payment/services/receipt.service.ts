@@ -788,6 +788,8 @@ export class ReceiptService {
           {
             receipt: { id: receipt.id } as ReceiptEntity, // Use minimal receipt reference with ID
             invoice: { id: invoice.id } as InvoiceEntity, // Use minimal invoice reference with ID
+            receiptId: receipt.id,
+            invoiceId: invoice.id,
             amountApplied: amountAppliedNumber,
             allocationDate: receipt.paymentDate || new Date(),
           },

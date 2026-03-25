@@ -3739,6 +3739,8 @@ export class InvoiceService {
           {
             receipt: { id: allocationData.receiptId } as ReceiptEntity,
             invoice: { id: allocationData.invoiceId } as InvoiceEntity,
+            receiptId: allocationData.receiptId,
+            invoiceId: allocationData.invoiceId,
             amountApplied: finalAmount,
             allocationDate: allocationData.allocationDate,
           },
