@@ -2874,6 +2874,8 @@ export class InvoiceService {
             // In some environments, saving a relation stub `{ id }` has resulted in NULL invoiceId,
             // which breaks the ledger UI (allocations become unresolvable).
             invoice,
+            receiptId: receipt.id,
+            invoiceId: invoice.id,
             amountApplied: applyAmount,
             allocationDate: receipt.paymentDate || new Date(),
           },

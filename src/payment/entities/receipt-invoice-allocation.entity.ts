@@ -18,6 +18,15 @@ export class ReceiptInvoiceAllocationEntity {
   @PrimaryGeneratedColumn()
   id: number;
 
+  // Explicit FK columns (already exist in DB due to @JoinColumn).
+  // Having them as real columns allows us to set them deterministically (e.g. during reconciliation)
+  // and prevents NULL FK inserts that break the ledger.
+  @Column({ name: 'receiptId', type: 'int', nullable: false })
+  receiptId: number;
+
+  @Column({ name: 'invoiceId', type: 'int', nullable: false })
+  invoiceId: number;
+
   // Many-to-One relationship with ReceiptEntity
   // This column (receiptId) will be the foreign key in the database
   @ManyToOne(() => ReceiptEntity, (receipt) => receipt.allocations, {
