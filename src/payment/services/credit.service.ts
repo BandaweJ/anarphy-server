@@ -329,6 +329,7 @@ export class CreditService {
     relatedReceiptId?: number,
     performedBy?: string,
     ipAddress?: string,
+    relatedInvoiceId?: number,
   ): Promise<StudentCreditEntity> {
     // Sanitize amount to prevent precision issues
     const sanitizedAmount = sanitizeAmount(amount);
@@ -422,6 +423,7 @@ export class CreditService {
         transactionType: CreditTransactionType.CREDIT,
         source: source,
         relatedReceiptId: relatedReceiptId,
+        relatedInvoiceId: relatedInvoiceId,
         performedBy: performedBy || 'system',
         transactionDate: new Date(),
       },

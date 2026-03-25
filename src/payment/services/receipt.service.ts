@@ -401,17 +401,15 @@ export class ReceiptService {
       );
     }
 
-    // Prefer current enrolment; if none, fall back to the latest enrolment
-    // so that we can accept payments for students enrolled in upcoming terms.
+    // Prefer current enrolment; if none, fall back to latest enrolment.
+    // IMPORTANT: enrol is optional; do NOT block payments for ex-students / not-currently-enrolled students.
     let enrol = await this.enrolmentService.getCurrentEnrollment(studentNumber);
     if (!enrol) {
-      enrol = await this.enrolmentService.getLatestEnrollmentForStudent(
-        studentNumber,
-      );
-    }
-
-    if (!enrol) {
-      throw new StudentNotEnrolledException(studentNumber);
+      try {
+        enrol = await this.enrolmentService.getLatestEnrollmentForStudent(studentNumber);
+      } catch {
+        enrol = null as any;
+      }
     }
 
     if (createReceiptDto.paymentMethod === PaymentMethods.cash) {
@@ -472,7 +470,7 @@ export class ReceiptService {
       receiptNumber: await this.generateReceiptNumber(),
       servedBy: profile.email,
       paymentDate: new Date(),
-      enrol: enrol,
+      enrol: enrol || null,
       isVoided: false,
       voidedAt: null,
       voidedBy: null,
@@ -482,25 +480,8 @@ export class ReceiptService {
       async (transactionalEntityManager) => {
         this.financialValidationService.validateReceiptBeforeSave(newReceipt);
 
-        // Reconcile finances BEFORE saving receipt (apply credit to invoices if needed)
-        try {
-          await this.invoiceService.reconcileStudentFinances(
-            studentNumber,
-            transactionalEntityManager,
-          );
-        } catch (reconciliationError) {
-          logStructured(
-            this.logger,
-            'warn',
-            'receipt.create.preReconciliationFailed',
-            'Pre-save reconciliation failed',
-            {
-              studentNumber,
-              error: (reconciliationError as Error).message,
-            },
-          );
-          // Continue anyway - reconciliation errors shouldn't block receipt creation
-        }
+        // NOTE: We only reconcile AFTER saving receipt and allocations
+        // to reduce DB load. Reconciliation is idempotent and ledger-consistent.
 
         const savedReceipt = await transactionalEntityManager.save(newReceipt);
 
@@ -1463,6 +1444,14 @@ export class ReceiptService {
         if (receipt.enrol) {
           doc.text(
             `Enrolled in ${receipt.enrol.name} Term ${receipt.enrol.num}, ${receipt.enrol.year}`,
+            fromBlockX + partyBlockPadding,
+            fromContentY,
+            { width: partyBlockWidth - partyBlockPadding * 2 },
+          );
+          fromContentY += doc.currentLineHeight() + lineSpacing;
+        } else {
+          doc.text(
+            'Not currently enrolled',
             fromBlockX + partyBlockPadding,
             fromContentY,
             { width: partyBlockWidth - partyBlockPadding * 2 },

@@ -54,8 +54,13 @@ export class ReceiptEntity {
   @Column()
   servedBy: string;
 
-  @ManyToOne(() => EnrolEntity, (enrol) => enrol.receipts)
-  enrol: EnrolEntity;
+  // Receipts must be allowed even if student is no longer enrolled.
+  // When present, enrol provides term/context for audit and reporting.
+  @ManyToOne(() => EnrolEntity, (enrol) => enrol.receipts, {
+    nullable: true,
+    onDelete: 'SET NULL',
+  })
+  enrol: EnrolEntity | null;
 
   // NEW: One-to-many relationship with the allocation entity
   @OneToMany(

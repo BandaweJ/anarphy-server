@@ -219,10 +219,8 @@ export class FinancialValidationService {
     //   );
     // }
 
-    // 2. Validate enrolment exists
-    if (!receipt.enrol) {
-      this.throwReceiptValidation('Receipt must be linked to an enrolment', receipt);
-    }
+    // 2. Enrolment is optional:
+    // Students who are no longer enrolled must still be able to pay outstanding balances.
 
     // 3. Validate amount
     const amountPaid = Number(receipt.amountPaid);

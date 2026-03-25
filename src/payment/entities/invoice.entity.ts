@@ -60,7 +60,7 @@ export class InvoiceEntity {
     default: 0.0,
     comment: 'Amount paid cannot be negative (enforced by database constraint)',
   })
-  amountPaidOnInvoice: number; // Tracks receipt allocations only (NOT credit allocations). Matches ledger: Amount Paid = receipt allocations, Balance = totalBill - receipt allocations. Credit allocations are display-only.
+  amountPaidOnInvoice: number; // Tracks total paid towards THIS invoice (receipt allocations + credit allocations). Matches ledger: Amount Paid = receipts + credits, Balance = totalBill - (receiptAllocations + creditAllocations).
 
   @Column({ default: InvoiceStatus.Pending })
   status: InvoiceStatus; // The current status of THIS invoice

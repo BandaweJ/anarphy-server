@@ -282,20 +282,8 @@ export class InvoiceService {
             ]);
           }
 
-          // Reconcile student finances BEFORE saving invoice
-          // This fixes any existing data integrity issues (overpayments, balance mismatches, etc.)
-          // so that the new invoice can be saved correctly
-          logStructured(
-            this.logger,
-            'log',
-            'invoice.save.preReconciliation',
-            'Reconciling student finances before saving invoice',
-            { studentNumber },
-          );
-          await this.reconcileStudentFinances(
-            student.studentNumber,
-            transactionalEntityManager,
-          );
+          // NOTE: We only reconcile AFTER saving the invoice to reduce DB load.
+          // Reconciliation is designed to be idempotent and ledger-consistent.
 
           const studentExemption = student.exemption;
           let bills: BillsEntity[] = [];
@@ -2464,6 +2452,9 @@ export class InvoiceService {
     let totalExemptionAmount = 0;
 
     for (const bill of bills) {
+      // Exemption is computed ONLY from studentExemption.
+      // If an exemption fee row is accidentally present in bills, ignore it to prevent double-discount.
+      if (bill.fees?.name === FeesNames.exemption) continue;
       totalGrossBill += Number(bill.fees.amount);
     }
 
@@ -2477,6 +2468,7 @@ export class InvoiceService {
         let foodFeeTotal = 0;
         let otherFeesTotal = 0;
         for (const bill of bills) {
+          if (bill.fees?.name === FeesNames.exemption) continue;
           if (bill.fees.name === FeesNames.foodFee) {
             foodFeeTotal += Number(bill.fees.amount);
           } else {
@@ -2524,55 +2516,23 @@ export class InvoiceService {
 
     let receiptAllocations = 0;
     let creditAllocations = 0;
-    
-    // Get set of receipt IDs that have direct allocations to this invoice
-    // This prevents double-counting when a receipt created both an allocation and a credit
-    const receiptIdsWithDirectAllocations = new Set<number>();
-    
+
     if (invoice.allocations && Array.isArray(invoice.allocations)) {
-      // Deduplicate allocations by receipt-invoice pair to prevent double-counting
-      const seenKeys = new Set<string>();
-      
+      // Receipt allocations are cash applied directly to this invoice.
       receiptAllocations = invoice.allocations.reduce(
-        (sum, alloc) => {
-          const receiptId = alloc.receipt?.id;
-          const invoiceId = alloc.invoice?.id || invoice.id;
-          
-          if (!receiptId) {
-            // Allocation without receipt ID - count it
-            return sum + Number(alloc.amountApplied || 0);
-          }
-          
-          // Track receipt IDs that have direct allocations
-          receiptIdsWithDirectAllocations.add(receiptId);
-          
-          const key = `${receiptId}-${invoiceId}`;
-          
-          // Only count the first allocation for each receipt-invoice pair
-          if (seenKeys.has(key)) {
-            return sum; // Skip duplicate
-          }
-          
-          seenKeys.add(key);
-          return sum + Number(alloc.amountApplied || 0);
-        },
+        (sum, alloc) => sum + Number(alloc.amountApplied || 0),
         0,
       );
     }
 
-    if (invoice.creditAllocations && Array.isArray(invoice.creditAllocations)) {
-      // Sum credit allocations, but EXCLUDE credits that came from receipts
-      // that already have direct allocations to this invoice (to prevent double-counting)
-      // This matches the ledger calculation logic
+    if (
+      invoice.creditAllocations &&
+      Array.isArray(invoice.creditAllocations)
+    ) {
+      // Credit allocations represent already-received funds (from overpayments)
+      // applied to this invoice. Credits must reduce balance (single ledger model).
       creditAllocations = invoice.creditAllocations.reduce(
-        (sum, alloc) => {
-          // If this credit allocation has a relatedReceiptId and that receipt
-          // already has a direct allocation to this invoice, skip it to avoid double-counting
-          if (alloc.relatedReceiptId && receiptIdsWithDirectAllocations.has(alloc.relatedReceiptId)) {
-            return sum; // Don't count this credit allocation
-          }
-          return sum + Number(alloc.amountApplied || 0);
-        },
+        (sum, alloc) => sum + Number(alloc.amountApplied || 0),
         0,
       );
     }
@@ -2585,19 +2545,12 @@ export class InvoiceService {
     // 1. Receipt creates allocation (50) and sets amountPaidOnInvoice (50)
     // 2. Later, if we use amountPaidOnInvoice (50) AND count allocations (50) = 100 (WRONG!)
     const isNewInvoice = !invoice.id;
-    
-    // IMPORTANT: Match ledger logic - Amount Paid = receipt allocations only.
-    // Credit allocations are for display/tracking only and don't reduce the balance
-    // because they represent money that was already counted when the receipt was processed.
-    // The ledger uses cash-flow: invoices add to balance, receipts subtract from balance.
-    // Allocations (including credit allocations) are display-only.
+
     const amountPaid = isNewInvoice
       ? Number(invoice.amountPaidOnInvoice || 0)
-      : receiptAllocations;
+      : receiptAllocations + creditAllocations;
 
-    // Balance matches ledger: totalBill - receipt allocations only
-    // Credit allocations don't reduce balance (they're display-only, money already counted)
-    const balance = totalBill - receiptAllocations;
+    const balance = Math.max(0, totalBill - (isNewInvoice ? amountPaid : amountPaid));
 
     return { totalBill, amountPaid, balance };
   }
@@ -3028,12 +2981,11 @@ export class InvoiceService {
       }
     }
 
-    // Step 6: Retroactively create receipt allocations from credit allocations
-    // This ensures traceability when receipts were converted to credits and then applied to invoices
-    await this.createReceiptAllocationsFromCredits(
-      studentNumber,
-      transactionalEntityManager,
-    );
+    // Step 6: (SKIPPED)
+    // Previously we backfilled receipt allocations from credit allocations for traceability.
+    // With the single ledger model (invoice.balance includes both receipts and credits),
+    // backfilling receipts would risk double-counting the same cash.
+    // The credit allocations themselves already provide the ledger truth.
 
     // Step 7: Verify receipt allocations match invoice payments
     for (const receipt of receipts) {
@@ -3186,41 +3138,19 @@ export class InvoiceService {
       );
     }
 
-    // Get set of receipt IDs that have direct allocations to this invoice
-    // This prevents double-counting when a receipt created both an allocation and a credit
-    const receiptIdsWithDirectAllocations = new Set<number>();
-    for (const alloc of receiptAllocations) {
-      if (alloc.receipt?.id) {
-        receiptIdsWithDirectAllocations.add(alloc.receipt.id);
-      }
-    }
-
-    // Sum credit allocations, but EXCLUDE credits that came from receipts
-    // that already have direct allocations to this invoice (to prevent double-counting)
-    // This matches the ledger calculation logic
+    // Sum credit allocations (credits applied to this invoice reduce balance).
     const creditAllocations = freshInvoice.creditAllocations || [];
-    const totalCreditAllocated = creditAllocations.reduce((sum, alloc) => {
-      // If this credit allocation has a relatedReceiptId and that receipt
-      // already has a direct allocation to this invoice, skip it to avoid double-counting
-      if (alloc.relatedReceiptId && receiptIdsWithDirectAllocations.has(alloc.relatedReceiptId)) {
-        return sum; // Don't count this credit allocation
-      }
-      return sum + Number(alloc.amountApplied || 0);
-    }, 0);
+    const totalCreditAllocated = creditAllocations.reduce(
+      (sum, alloc) => sum + Number(alloc.amountApplied || 0),
+      0,
+    );
 
-    // IMPORTANT: Match ledger logic - Amount Paid = receipt allocations only.
-    // Credit allocations are for display/tracking only and don't reduce the balance
-    // because they represent money that was already counted when the receipt was processed.
-    // The ledger uses cash-flow: invoices add to balance, receipts subtract from balance.
-    // Allocations (including credit allocations) are display-only.
-    const calculatedBalance = netBill - totalReceiptAllocated;
+    const totalPaid = totalReceiptAllocated + totalCreditAllocated;
+    const calculatedBalance = netBill - totalPaid;
 
-    // Update invoice fields
-    // IMPORTANT: amountPaidOnInvoice should only reflect receipt allocations to match ledger.
-    // Credit allocations don't count as "payments" - they're just allocations of already-counted money.
-    // For overpayments, amountPaidOnInvoice should be capped at netBill (what the invoice is worth)
-    freshInvoice.amountPaidOnInvoice = Math.min(totalReceiptAllocated, netBill); // Receipt allocations only, capped at netBill
-    freshInvoice.balance = Math.max(0, calculatedBalance); // Balance = totalBill - receipt allocations only
+    // Update invoice fields (single ledger model)
+    freshInvoice.amountPaidOnInvoice = Math.min(totalPaid, netBill);
+    freshInvoice.balance = Math.max(0, calculatedBalance);
     
     // Update status based on the recalculated balance
     freshInvoice.status = this.getInvoiceStatus(freshInvoice);
@@ -3766,13 +3696,36 @@ export class InvoiceService {
 
     // Step 2: Create credit for the overpayment amount
     // This represents the excess payment that should be available as credit
-    await this.creditService.createOrUpdateStudentCredit(
-      studentNumber,
-      overpayment,
-      transactionalEntityManager,
-      `Overpayment correction from Invoice ${freshInvoice.invoiceNumber}`,
-      undefined,
+    const existingOverpaymentCredits = await transactionalEntityManager.find(
+      CreditTransactionEntity,
+      {
+        where: {
+          relatedInvoiceId: freshInvoice.id,
+          transactionType: CreditTransactionType.CREDIT,
+        },
+      },
     );
+    const alreadyCredited = existingOverpaymentCredits.reduce(
+      (sum, t) => sum + Number(t.amount || 0),
+      0,
+    );
+
+    // If reconciliation reruns or invoice totals change, we may already have created
+    // some credit for this invoice. Only create the incremental delta.
+    const additionalOverpayment = overpayment - alreadyCredited;
+
+    if (additionalOverpayment > 0.01) {
+      await this.creditService.createOrUpdateStudentCredit(
+        studentNumber,
+        additionalOverpayment,
+        transactionalEntityManager,
+        `Overpayment correction from Invoice ${freshInvoice.invoiceNumber}`,
+        undefined,
+        undefined,
+        undefined,
+        freshInvoice.id,
+      );
+    }
 
     // Step 3: Save the corrected invoice
     await transactionalEntityManager.save(InvoiceEntity, freshInvoice);
@@ -3787,7 +3740,7 @@ export class InvoiceService {
         invoiceId: freshInvoice.id,
         studentNumber,
         correctedAmountPaid: actualAmountPaid,
-        creditCreated: overpayment,
+        creditCreated: Math.max(0, additionalOverpayment),
       },
     );
 
@@ -3796,7 +3749,7 @@ export class InvoiceService {
       correctedInvoicesList.push({
         invoiceNumber: freshInvoice.invoiceNumber,
         overpaymentAmount: overpayment,
-        creditCreated: overpayment,
+        creditCreated: Math.max(0, additionalOverpayment),
       });
     }
 
@@ -3993,7 +3946,10 @@ export class InvoiceService {
   }
 
   private _getGrossBillAmount(bills: BillsEntity[]): number {
-    return bills.reduce((sum, bill) => sum + (+bill.fees?.amount || 0), 0);
+    return bills.reduce((sum, bill) => {
+      if (bill.fees?.name === FeesNames.exemption) return sum;
+      return sum + (+bill.fees?.amount || 0);
+    }, 0);
   }
 
   private _calculateExemptionAmount(invoiceData: InvoiceEntity): number {
@@ -4020,6 +3976,7 @@ export class InvoiceService {
 
         invoiceData.bills.forEach((bill) => {
           if (bill.fees) {
+            if (bill.fees.name === FeesNames.exemption) return;
             if (bill.fees.name === FeesNames.foodFee) {
               totalFoodFee += +bill.fees.amount;
             } else {
