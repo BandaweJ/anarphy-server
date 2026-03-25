@@ -2940,7 +2940,26 @@ export class InvoiceService {
       await transactionalEntityManager.save(StudentCreditEntity, studentCredit);
     }
     if (sortedInvoices.length > 0) {
-      await transactionalEntityManager.save(InvoiceEntity, sortedInvoices);
+      // IMPORTANT:
+      // Avoid `save(InvoiceEntity, invoices)` here because TypeORM may attempt to synchronize
+      // one-to-many relations (e.g. `invoice.allocations`) and emit UPDATEs against
+      // `receipt_invoice_allocations`. In production this has manifested as attempts to set
+      // allocation.invoiceId to NULL, which violates the NOT NULL constraint.
+      // We only need to persist scalar financial fields on the invoice.
+      for (const inv of sortedInvoices) {
+        if (!inv.id) continue;
+        await transactionalEntityManager.update(
+          InvoiceEntity,
+          { id: inv.id },
+          {
+            totalBill: inv.totalBill,
+            exemptedAmount: inv.exemptedAmount,
+            amountPaidOnInvoice: inv.amountPaidOnInvoice,
+            balance: inv.balance,
+            status: inv.status,
+          },
+        );
+      }
     }
 
     // --- Apply existing credit FIFO to remaining invoice balances (if any) ---
