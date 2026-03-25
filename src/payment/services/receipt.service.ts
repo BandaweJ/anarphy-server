@@ -738,9 +738,25 @@ export class ReceiptService {
         continue;
       }
 
+      // Safeguard (ported from the `junior` repo):
+      // never allocate more than (totalBill - existing receipt allocations) so we don't over-allocate
+      // if invoice.balance/status were stale or if receipts are processed out-of-order.
+      const totalBill = Number(invoice.totalBill ?? 0);
+      const existingAllocated = await transactionalEntityManager
+        .createQueryBuilder(ReceiptInvoiceAllocationEntity, 'a')
+        .where('a.invoiceId = :invoiceId', { invoiceId: invoice.id })
+        .select('COALESCE(SUM(a.amountApplied), 0)', 'total')
+        .getRawOne<{ total: string }>();
+      const existingSum = Number(existingAllocated?.total ?? 0);
+      const headroom = Math.max(0, totalBill - existingSum);
+      if (headroom <= 0.01) {
+        continue; // invoice already fully allocated by receipts
+      }
+
       const amountToApplyToCurrentInvoice = Math.min(
         Number(remainingPaymentAmount),
         Number(invoiceCurrentBalance),
+        headroom,
       );
 
       const amountAppliedNumber = Number(amountToApplyToCurrentInvoice);
