@@ -2930,18 +2930,27 @@ export class InvoiceService {
       // that attempt to set allocation.invoiceId to NULL (likely due to relation synchronization),
       // which violates the NOT NULL constraint on `receipt_invoice_allocations.invoiceId`.
       // Use a direct insert of scalar columns to make FK persistence deterministic.
+      const rows = newReceiptAllocations.map((a) => ({
+        receiptId: a.receiptId ?? a.receipt?.id,
+        invoiceId: a.invoiceId ?? a.invoice?.id,
+        amountApplied: a.amountApplied,
+        allocationDate: a.allocationDate,
+      }));
+
+      const invalid = rows.find((r) => !r.receiptId || !r.invoiceId);
+      if (invalid) {
+        throw new Error(
+          `From-scratch reconciliation attempted to insert receipt allocation with missing FK(s): receiptId=${String(
+            invalid.receiptId,
+          )}, invoiceId=${String(invalid.invoiceId)}`,
+        );
+      }
+
       await transactionalEntityManager
         .createQueryBuilder()
         .insert()
         .into(ReceiptInvoiceAllocationEntity)
-        .values(
-          newReceiptAllocations.map((a) => ({
-            receiptId: a.receiptId ?? a.receipt?.id,
-            invoiceId: a.invoiceId ?? a.invoice?.id,
-            amountApplied: a.amountApplied,
-            allocationDate: a.allocationDate,
-          })),
-        )
+        .values(rows)
         .execute();
     }
     if (newReceiptCredits.length > 0) {
