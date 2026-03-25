@@ -2870,11 +2870,18 @@ export class InvoiceService {
           ReceiptInvoiceAllocationEntity,
           {
             receipt,
+            // IMPORTANT: set FK explicitly so invoiceId is persisted and serialized.
+            // Relying on a partial `invoice: { id }` object can result in NULL invoiceId
+            // in some environments, which breaks the ledger UI (allocations become unresolvable).
             invoice: { id: invoice.id } as InvoiceEntity,
             amountApplied: applyAmount,
             allocationDate: receipt.paymentDate || new Date(),
           },
         );
+        // Ensure FK fields exist on the instance for persistence/serialization.
+        // These properties are not declared on the entity class, but are the actual join columns.
+        (alloc as any).invoiceId = invoice.id;
+        (alloc as any).receiptId = receipt.id;
         newReceiptAllocations.push(alloc);
 
         invoice.amountPaidOnInvoice = Math.min(
