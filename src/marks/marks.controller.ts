@@ -90,23 +90,6 @@ export class MarksController {
     return this.marksService.getMarksByClassWithTermId(termId, name, examType, profile);
   }
 
-  @Get('/marks/:num/:year/:name/:examType')
-  getMarksByClass(
-    @Param('num', ParseIntPipe) num: number,
-    @Param('year', ParseIntPipe) year: number,
-    @Param('name') name: string,
-    @Param('examType') examType: string,
-    @GetUser() profile: StudentsEntity | ParentsEntity | TeachersEntity,
-  ) {
-    return this.marksService.getMarksbyClass(
-      num,
-      year,
-      name,
-      examType,
-      profile,
-    );
-  }
-
   @Get('/marks/term/:termId/:name/:subjectCode/:examType')
   getSubjectMarksInClassByTermId(
     @Param('termId', ParseIntPipe) termId: number,
@@ -117,26 +100,6 @@ export class MarksController {
   ) {
     return this.marksService.getSubjectMarksInClassWithTermId(
       termId,
-      name,
-      subjectCode,
-      examType,
-      profile,
-    );
-  }
-
-  @Get('/marks/:num/:year/:name/:subjectCode/:examType')
-  getSubjectMarksInClass(
-    @Param('num', ParseIntPipe) num: number,
-    @Param('year', ParseIntPipe) year: number,
-    @Param('name') name: string,
-    @Param('subjectCode') subjectCode: string,
-    @Param('examType') examType: string,
-    @GetUser() profile: StudentsEntity | ParentsEntity | TeachersEntity,
-  ) {
-    // console.log(num, name, year, subjectCode);
-    return this.marksService.getSubjectMarksInClass(
-      num,
-      year,
       name,
       subjectCode,
       examType,
@@ -181,30 +144,24 @@ export class MarksController {
     return this.marksService.deleteMark(id, profile);
   }
 
-  @Get('/perf/:num/:year/:name/:examType')
+  @Get('/perf/term/:termId/:name/:examType')
   getPerfomanceData(
-    @Param('num') num: number,
-    @Param('year') year: number,
+    @Param('termId', ParseIntPipe) termId: number,
     @Param('name') name: string,
     @Param('examType') examType: string,
   ) {
-    // console.log(num, name, year);
-    return this.marksService.getPerfomanceData(num, year, name, examType);
+    return this.marksService.getPerfomanceData(termId, name, examType);
   }
 
-
-  @Get('/progress/:num/:year/:clas/:examType')
+  @Get('/progress/term/:termId/:clas/:examType')
   fetchMarksProgress(
     @Param('clas') clas: string,
-    @Param('num') num: number,
-    @Param('year') year: number,
+    @Param('termId', ParseIntPipe) termId: number,
     @Param('examType') examType: string,
     @GetUser() profile: TeachersEntity,
   ) {
-    // console.log('In controller');
     return this.marksService.fetchMarksProgress(
-      num,
-      year,
+      termId,
       clas,
       examType,
       profile,

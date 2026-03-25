@@ -1,4 +1,5 @@
-import { Column, Entity, Index, PrimaryGeneratedColumn } from 'typeorm';
+import { Column, Entity, Index, ManyToOne, JoinColumn, PrimaryGeneratedColumn } from 'typeorm';
+import { TermsEntity } from 'src/enrolment/entities/term.entity';
 
 @Entity('report_releases')
 @Index(['name', 'num', 'year', 'examType'], { unique: true })
@@ -15,8 +16,15 @@ export class ReportReleaseEntity {
   @Column()
   year: number;
 
+  @Column({ nullable: true })
+  termId?: number;
+
   @Column()
   examType: string;
+
+  @ManyToOne(() => TermsEntity, { nullable: true })
+  @JoinColumn({ name: 'termId' })
+  term?: TermsEntity;
 
   @Column({ default: false })
   released: boolean;

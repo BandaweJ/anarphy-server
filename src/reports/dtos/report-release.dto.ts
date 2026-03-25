@@ -6,10 +6,7 @@ export class SetReportReleaseDto {
   name: string;
 
   @IsNumber()
-  num: number;
-
-  @IsNumber()
-  year: number;
+  termId: number;
 
   @IsString()
   @IsNotEmpty()
@@ -26,11 +23,7 @@ export class GetReportReleaseQueryDto {
 
   @IsOptional()
   @IsNumber()
-  num?: number;
-
-  @IsOptional()
-  @IsNumber()
-  year?: number;
+  termId?: number;
 
   @IsOptional()
   @IsString()

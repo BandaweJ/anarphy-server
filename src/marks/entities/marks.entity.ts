@@ -8,20 +8,16 @@ import {
 } from 'typeorm';
 import { SubjectsEntity } from './subjects.entity';
 import { StudentsEntity } from '../../profiles/entities/students.entity';
+import { TermsEntity } from '../../enrolment/entities/term.entity';
 
 @Entity('marks')
 export class MarksEntity {
   @PrimaryGeneratedColumn()
   id: number;
 
-  @Column()
-  num: number;
-
-  @Column()
-  year: number;
-
-  @Column({ nullable: true })
-  termId?: number;
+  @ManyToOne(() => TermsEntity, { nullable: false })
+  @JoinColumn({ name: 'termId' })
+  term: TermsEntity;
 
   @Column()
   name: string;

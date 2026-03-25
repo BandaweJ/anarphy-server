@@ -8,17 +8,7 @@ export class CreateMarkDto {
   @ApiProperty()
   @IsNumber()
   @IsNotEmpty()
-  num: number;
-
-  @ApiProperty()
-  @IsNumber()
-  @IsNotEmpty()
-  year: number;
-
-  @ApiProperty({ required: false })
-  @IsOptional()
-  @IsNumber()
-  termId?: number;
+  termId: number;
 
   @ApiProperty()
   @IsString()

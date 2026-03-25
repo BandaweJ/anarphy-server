@@ -48,25 +48,23 @@ export class ReportsService {
   ) {}
 
   async generateReports(
+    termId: number,
     name: string,
-    num: number,
-    year: number,
     examType: string,
     profile: TeachersEntity | StudentsEntity | ParentsEntity,
   ): Promise<ReportsModel[]> {
     const reports: ReportModel[] = [];
+    const term = await this.enrolmentService.getOneTermById(termId);
 
     // get class list
-    const classList = await this.enrolmentService.getEnrolmentByClass(
+    const classList = await this.enrolmentService.getEnrolmentByClassByTermId(
       name,
-      num,
-      year,
+      termId,
     );
 
     //get all marks for the class for all subjects and current examtype
-    const marks = await this.marksService.getMarksbyClass(
-      num,
-      year,
+    const marks = await this.marksService.getMarksByTermId(
+      termId,
       name,
       examType,
       profile,
@@ -236,23 +234,18 @@ export class ReportsService {
       const rep: ReportsModel = new ReportsModel();
 
       rep.name = name;
-      rep.num = num;
+      rep.termId = termId;
+      rep.num = term.num;
       rep.report = report;
       rep.studentNumber = report.studentNumber;
-      rep.year = year;
+      rep.year = term.year;
       rep.examType = examType;
 
       reps.push(rep);
     });
 
     // check if reports already saved and assign id and head's comment
-    const savedReports = await this.viewReports(
-      name,
-      num,
-      year,
-      examType,
-      profile,
-    );
+    const savedReports = await this.viewReports(termId, name, examType, profile);
 
     savedReports.forEach((savedRepEntity) => {
       reps.forEach((generatedRep) => {
@@ -317,8 +310,7 @@ export class ReportsService {
     examType: string,
     profile: TeachersEntity | StudentsEntity | ParentsEntity,
   ): Promise<ReportsModel[]> {
-    const term = await this.enrolmentService.getOneTermById(termId);
-    return this.generateReports(name, term.num, term.year, examType, profile);
+    return this.generateReports(termId, name, examType, profile);
   }
 
   // async generateReports(
@@ -603,23 +595,21 @@ export class ReportsService {
     return ![ROLES.student, ROLES.parent].includes(profile.role as ROLES);
   }
 
-  private async isReleased(name: string, num: number, year: number, examType: string): Promise<boolean> {
+  private async isReleased(name: string, termId: number, examType: string): Promise<boolean> {
     const release = await this.reportReleaseRepository.findOne({
-      where: { name, num, year, examType },
+      where: { name, termId, examType },
     });
     return !!release?.released;
   }
 
   async getReportReleaseStatuses(
     name?: string,
-    num?: number,
-    year?: number,
+    termId?: number,
     examType?: string,
   ): Promise<ReportReleaseEntity[]> {
     const where: any = {};
     if (name) where.name = name;
-    if (num !== undefined) where.num = num;
-    if (year !== undefined) where.year = year;
+    if (termId !== undefined) where.termId = termId;
     if (examType) where.examType = examType;
 
     return this.reportReleaseRepository.find({
@@ -630,17 +620,25 @@ export class ReportsService {
 
   async setReportReleaseStatus(
     name: string,
-    num: number,
-    year: number,
+    termId: number,
     examType: string,
     released: boolean,
     profile: TeachersEntity | StudentsEntity | ParentsEntity,
   ): Promise<ReportReleaseEntity> {
     const existing = await this.reportReleaseRepository.findOne({
-      where: { name, num, year, examType },
+      where: { name, termId, examType },
     });
 
-    const entity = existing ?? this.reportReleaseRepository.create({ name, num, year, examType });
+    const term = await this.enrolmentService.getOneTermById(termId);
+    const entity =
+      existing ??
+      this.reportReleaseRepository.create({
+        name,
+        termId,
+        num: term.num,
+        year: term.year,
+        examType,
+      });
     entity.released = released;
     entity.releasedAt = released ? new Date() : null;
     entity.releasedBy = released ? (profile as any)?.id ?? null : null;
@@ -649,13 +647,13 @@ export class ReportsService {
   }
 
   async saveReports(
-    num: number,
-    year: number,
+    termId: number,
     name: string, // e.g., Class Name like 'Form 1 Green'
     reports: ReportsModel[], // Array of report data objects
     examType: ExamType,
     profile: TeachersEntity | StudentsEntity | ParentsEntity, // The user performing the action
   ): Promise<ReportsEntity[]> {
+    const term = await this.enrolmentService.getOneTermById(termId);
     // Return the saved/updated TypeORM entities
 
     // 1. Authorization Check (More Direct)
@@ -680,9 +678,8 @@ export class ReportsService {
       // Find all reports matching the criteria and the student numbers in the input batch
       existingReports = await this.reportsRepository.find({
         where: {
+          termId,
           name,
-          num,
-          year,
           examType,
           studentNumber: In(studentNumbers), // Use TypeORM's 'In' operator
         },
@@ -717,9 +714,10 @@ export class ReportsService {
         // --- CREATE ---
         // Create a new entity instance using the repository's create method
         const newReport = this.reportsRepository.create({
+          termId,
           name,
-          num,
-          year,
+          num: term.num,
+          year: term.year,
           examType,
           studentNumber: inputReport.studentNumber,
           report: inputReport.report, // Assign the full report data from input
@@ -742,7 +740,7 @@ export class ReportsService {
       );
       
       // Send notifications asynchronously (don't block the response)
-      this.sendReportNotifications(newReports, name, num, year, examType).catch(
+      this.sendReportNotifications(newReports, name, term.num, term.year, examType).catch(
         (error) => {
           console.error('Error sending report notifications:', error);
           // Don't throw - notifications are non-critical
@@ -764,8 +762,7 @@ export class ReportsService {
     examType: ExamType,
     profile: TeachersEntity | StudentsEntity | ParentsEntity,
   ): Promise<ReportsEntity[]> {
-    const term = await this.enrolmentService.getOneTermById(termId);
-    return this.saveReports(term.num, term.year, name, reports, examType, profile);
+    return this.saveReports(termId, name, reports, examType, profile);
   }
 
   /**
@@ -857,9 +854,14 @@ export class ReportsService {
         ? reports
         : (
             await Promise.all(
-              reports.map(async (rep) =>
-                (await this.isReleased(rep.name, rep.num, rep.year, rep.examType)) ? rep : null,
-              ),
+              reports.map(async (rep) => {
+                const resolvedTermId =
+                  rep.termId ??
+                  (await this.enrolmentService.getOneTerm(rep.num, rep.year)).id;
+                return (await this.isReleased(rep.name, resolvedTermId, rep.examType))
+                  ? rep
+                  : null;
+              }),
             )
           ).filter((rep) => !!rep);
 
@@ -933,9 +935,8 @@ export class ReportsService {
   }
 
   async viewReports(
+    termId: number,
     name: string,
-    num: number,
-    year: number,
     examType: string,
     profile: TeachersEntity | StudentsEntity | ParentsEntity,
   ): Promise<any[]> {
@@ -944,7 +945,7 @@ export class ReportsService {
     }
 
     if (!this.canAccessUnreleased(profile)) {
-      const released = await this.isReleased(name, num, year, examType);
+      const released = await this.isReleased(name, termId, examType);
       if (!released) {
         return [];
       }
@@ -955,18 +956,16 @@ export class ReportsService {
     if (examType) {
       reports = await this.reportsRepository.find({
         where: {
+          termId,
           name,
-          num,
-          year,
           examType,
         },
       });
     } else
       reports = await this.reportsRepository.find({
         where: {
+          termId,
           name,
-          num,
-          year,
         },
       });
 
@@ -983,16 +982,14 @@ export class ReportsService {
     examType: string,
     profile: TeachersEntity | StudentsEntity | ParentsEntity,
   ): Promise<any[]> {
-    const term = await this.enrolmentService.getOneTermById(termId);
-    return this.viewReports(name, term.num, term.year, examType, profile);
+    return this.viewReports(termId, name, examType, profile);
   }
 
   async downloadReport(
-    name,
-    num,
-    year,
-    examType,
-    studentNumber,
+    termId: number,
+    name: string,
+    examType: string,
+    studentNumber: string,
     profile: TeachersEntity | StudentsEntity | ParentsEntity,
   ) {
     if (profile.role === ROLES.student) {
@@ -1011,7 +1008,7 @@ export class ReportsService {
     }
 
     if (!this.canAccessUnreleased(profile)) {
-      const released = await this.isReleased(name, num, year, examType);
+      const released = await this.isReleased(name, termId, examType);
       if (!released) {
         throw new ForbiddenException('Report is not released yet');
       }
@@ -1019,16 +1016,15 @@ export class ReportsService {
 
     const report = await this.reportsRepository.findOne({
       where: {
+        termId,
         name,
-        num,
-        year,
         studentNumber,
         examType,
       },
     });
     if (!report)
       throw new NotFoundException(
-        `Report for student ${studentNumber} not found for term ${num}, ${year} for examtype ${examType}`,
+        `Report for student ${studentNumber} not found for termId ${termId} and examtype ${examType}`,
       );
     return await this.generatePDF(report);
   }
@@ -1040,11 +1036,9 @@ export class ReportsService {
     studentNumber: string,
     profile: TeachersEntity | StudentsEntity | ParentsEntity,
   ) {
-    const term = await this.enrolmentService.getOneTermById(termId);
     return this.downloadReport(
+      termId,
       name,
-      term.num,
-      term.year,
       examType,
       studentNumber,
       profile,

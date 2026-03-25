@@ -115,28 +115,20 @@ export class MarksService {
       }
     }
 
-    const { num, year, termId, name, mark, termMark, comment, subject, student, examType } =
+    const { termId, name, mark, termMark, comment, subject, student, examType } =
       createMarkDto;
 
-    let resolvedNum = num;
-    let resolvedYear = year;
-    if (termId) {
-      const term = await this.enrolmentService.getOneTermById(termId);
-      resolvedNum = term.num;
-      resolvedYear = term.year;
-    }
+    const term = await this.enrolmentService.getOneTermById(termId);
 
     const found = await this.marksRepository.findOne({
-      // where: { id },
       where: {
-        year: resolvedYear,
-        num: resolvedNum,
+        term: { id: termId },
         name,
         examType,
         subject: { code: subject.code },
         student: { studentNumber: student.studentNumber },
       },
-      relations: ['student', 'subject'],
+      relations: ['student', 'subject', 'term'],
     });
 
     if (found) {
@@ -148,22 +140,18 @@ export class MarksService {
       found.comment = comment;
       const id = found.id;
 
-      const result = await this.marksRepository.update(id, {
+      await this.marksRepository.update(id, {
         mark,
         termMark: termMark ?? null,
         comment,
-        termId: termId ?? found.termId ?? null,
       });
 
-      if (result.affected) {
-        return found;
-      }
+      found.term = term;
+      return found;
     } else {
       //new mark
       const record = new MarksEntity();
-      record.num = resolvedNum;
-      record.year = resolvedYear;
-      record.termId = termId;
+      record.term = term;
       record.name = name;
       record.mark = mark;
       record.termMark = termMark ?? null;
@@ -171,7 +159,6 @@ export class MarksService {
       record.subject = subject;
       record.student = student;
       record.examType = examType; //all new marks have examtype set
-      // console.log('new mark ', record);
 
       try {
         await this.marksRepository.save(record);
@@ -194,13 +181,15 @@ export class MarksService {
       }
     }
     return await this.marksRepository.find({
-      relations: ['student', 'subject'],
+      relations: ['student', 'subject', 'term'],
     });
   }
 
-  async getMarksbyClass(
-    num: number,
-    year: number,
+  /**
+   * Marks for a class name + exam type, scoped by term id (canonical).
+   */
+  async getMarksByTermId(
+    termId: number,
     name: string,
     examType: string,
     profile: StudentsEntity | ParentsEntity | TeachersEntity,
@@ -215,23 +204,26 @@ export class MarksService {
     if (examType) {
       return await this.marksRepository.find({
         where: {
-          num,
-          year,
+          term: { id: termId },
           name,
           examType,
         },
-        relations: ['subject', 'student'],
+        relations: ['subject', 'student', 'term'],
       });
     }
-    // else
-    //   return await this.marksRepository.find({
-    //     where: {
-    //       num,
-    //       year,
-    //       name,
-    //     },
-    //     relations: ['subject', 'student'],
-    //   });
+    return [];
+  }
+
+  /** Resolves term from num/year then delegates to {@link getMarksByTermId}. */
+  async getMarksbyClass(
+    num: number,
+    year: number,
+    name: string,
+    examType: string,
+    profile: StudentsEntity | ParentsEntity | TeachersEntity,
+  ): Promise<MarksEntity[]> {
+    const term = await this.enrolmentService.getOneTerm(num, year);
+    return this.getMarksByTermId(term.id, name, examType, profile);
   }
 
   async getMarksByClassWithTermId(
@@ -240,13 +232,11 @@ export class MarksService {
     examType: string,
     profile: StudentsEntity | ParentsEntity | TeachersEntity,
   ): Promise<MarksEntity[]> {
-    const term = await this.enrolmentService.getOneTermById(termId);
-    return this.getMarksbyClass(term.num, term.year, name, examType, profile);
+    return this.getMarksByTermId(termId, name, examType, profile);
   }
 
   async getSubjectMarksInClass(
-    num: number,
-    year: number,
+    termId: number,
     name: string,
     subjectCode: string,
     examType: string,
@@ -259,21 +249,13 @@ export class MarksService {
       }
     }
 
-    // const updated = await this.marksRepository.update(
-    //   { num: 2, year: 2024 },
-    //   { examType: 'Mid Term' },
-    // );
-
-    // console.log('Updated marks', updated.affected);
-    // console.log('Always getSubjectMarksInClass called');
-
     const subject = await this.getOneSubject(subjectCode); //get the subject
 
-    const classlist = await this.enrolmentService.getEnrolmentByClass(
-      //get the list of students in the class
+    const term = await this.enrolmentService.getOneTermById(termId);
+
+    const classlist = await this.enrolmentService.getEnrolmentByClassByTermId(
       name,
-      num,
-      year,
+      termId,
     );
 
     let foundMarks: MarksEntity[] = []; //array to store the marks currently saved for the subject and class
@@ -281,21 +263,19 @@ export class MarksService {
     if (examType) {
       foundMarks = await this.marksRepository.find({
         where: {
-          num,
+          term: { id: termId },
           name,
-          year,
           examType,
         },
-        relations: ['subject', 'student'],
+        relations: ['subject', 'student', 'term'],
       });
     } else
       foundMarks = await this.marksRepository.find({
         where: {
-          num,
+          term: { id: termId },
           name,
-          year,
         },
-        relations: ['subject', 'student'],
+        relations: ['subject', 'student', 'term'],
       });
 
     const subjectMarks = foundMarks.filter(
@@ -308,9 +288,8 @@ export class MarksService {
     classlist.map((enrol) => {
       const mark = new MarksEntity();
 
-      mark.num = num;
+      mark.term = term;
       mark.name = name;
-      mark.year = year;
       mark.student = enrol.student;
       mark.subject = subject;
       if (examType) {
@@ -344,10 +323,8 @@ export class MarksService {
     examType: string,
     profile: StudentsEntity | ParentsEntity | TeachersEntity,
   ): Promise<MarksEntity[]> {
-    const term = await this.enrolmentService.getOneTermById(termId);
     return this.getSubjectMarksInClass(
-      term.num,
-      term.year,
+      termId,
       name,
       subjectCode,
       examType,
@@ -358,7 +335,7 @@ export class MarksService {
   async getStudentMarks(studentNumber: string): Promise<MarksEntity[]> {
     return await this.marksRepository.find({
       where: { student: { studentNumber } },
-      relations: ['subject', 'student'],
+      relations: ['subject', 'student', 'term'],
     });
   }
 
@@ -390,7 +367,7 @@ export class MarksService {
 
     return this.marksRepository.find({
       where: { student: { studentNumber: student.studentNumber } },
-      relations: ['subject', 'student'],
+      relations: ['subject', 'student', 'term'],
     });
   }
 
@@ -409,7 +386,7 @@ export class MarksService {
       where: {
         id,
       },
-      relations: ['subject', 'student'],
+      relations: ['subject', 'student', 'term'],
     });
 
     if (mark) {
@@ -424,8 +401,7 @@ export class MarksService {
   }
 
   async getPerfomanceData(
-    num: number,
-    year: number,
+    termId: number,
     name: string,
     examType: string,
   ) {
@@ -434,21 +410,19 @@ export class MarksService {
     if (examType)
       marks = await this.marksRepository.find({
         where: {
-          num,
+          term: { id: termId },
           name,
-          year,
           examType,
         },
-        relations: ['student', 'subject'],
+        relations: ['student', 'subject', 'term'],
       });
     else
       marks = await this.marksRepository.find({
         where: {
-          num,
+          term: { id: termId },
           name,
-          year,
         },
-        relations: ['student', 'subject'],
+        relations: ['student', 'subject', 'term'],
       });
 
     // const subjectsSet = new Set<SubjectsEntity>();
@@ -512,15 +486,13 @@ export class MarksService {
   }
 
   async fetchMarksProgress(
-    num: number,
-    year: number,
+    termId: number,
     clas: string,
     examType: string,
     profile: TeachersEntity,
   ): Promise<any[]> {
-    const marks = await this.getMarksbyClass(
-      num,
-      year,
+    const marks = await this.getMarksByTermId(
+      termId,
       clas,
       examType,
       profile,
@@ -533,10 +505,9 @@ export class MarksService {
 
     const marksProgress: MarksProgressModel[] = [];
 
-    const clasEnrolment = await this.enrolmentService.getEnrolmentByClass(
+    const clasEnrolment = await this.enrolmentService.getEnrolmentByClassByTermId(
       clas,
-      num,
-      year,
+      termId,
     );
 
     subjectsNames.forEach((subjectName) => {
