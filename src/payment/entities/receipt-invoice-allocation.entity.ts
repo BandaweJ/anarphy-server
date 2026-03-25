@@ -7,6 +7,8 @@ import {
   Column,
   ManyToOne,
   JoinColumn,
+  BeforeInsert,
+  BeforeUpdate,
   CreateDateColumn,
 } from 'typeorm';
 import { ReceiptEntity } from './payment.entity'; // Assuming your receipt entity is in payment.entity.ts
@@ -79,4 +81,18 @@ export class ReceiptInvoiceAllocationEntity {
 
   @CreateDateColumn({ type: 'timestamp' })
   allocationDate: Date; // Timestamp for when this allocation was made
+
+  // Safety net: some creation paths may only set `receipt: { id }` / `invoice: { id }`
+  // relation stubs. Since `receiptId`/`invoiceId` are NOT NULL, sync them from relations
+  // before persisting to avoid runtime FK constraint violations.
+  @BeforeInsert()
+  @BeforeUpdate()
+  private syncForeignKeys(): void {
+    if ((!this.receiptId || this.receiptId === 0) && this.receipt?.id) {
+      this.receiptId = this.receipt.id;
+    }
+    if ((!this.invoiceId || this.invoiceId === 0) && this.invoice?.id) {
+      this.invoiceId = this.invoice.id;
+    }
+  }
 }
