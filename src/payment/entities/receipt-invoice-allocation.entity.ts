@@ -94,5 +94,18 @@ export class ReceiptInvoiceAllocationEntity {
     if ((!this.invoiceId || this.invoiceId === 0) && this.invoice?.id) {
       this.invoiceId = this.invoice.id;
     }
+
+    // Fail fast with a useful error so we can identify the code path creating bad allocations.
+    // If these are missing here, saving would hit the DB NOT NULL constraint anyway.
+    if (!this.receiptId) {
+      throw new Error(
+        `ReceiptInvoiceAllocationEntity missing receiptId (receipt?.id=${this.receipt?.id ?? 'null'})`,
+      );
+    }
+    if (!this.invoiceId) {
+      throw new Error(
+        `ReceiptInvoiceAllocationEntity missing invoiceId (invoice?.id=${this.invoice?.id ?? 'null'}, receiptId=${this.receiptId})`,
+      );
+    }
   }
 }
