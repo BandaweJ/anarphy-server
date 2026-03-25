@@ -132,6 +132,29 @@ export type CreditTransactionLike = {
   fingerprint?: string;
 };
 
+export type RebuildReceiptLike = {
+  id: number;
+  paymentDate: Date;
+  amountPaid: number | string;
+};
+
+export type RebuildInvoiceLike = {
+  id: number;
+  invoiceDate: Date;
+  totalBill: number | string;
+};
+
+export type FromScratchRebuildOutput = {
+  receiptAllocations: Array<{
+    receiptId: number;
+    invoiceId: number;
+    amountApplied: number;
+  }>;
+  receiptCredits: Array<{ receiptId: number; creditAmount: number }>;
+  invoices: Array<{ id: number; totalBill: number; receiptPaid: number; balance: number }>;
+  totalCreditCreated: number;
+};
+
 export type InvoiceReconciliationState = {
   id: number;
   invoiceNumber?: string;
@@ -143,6 +166,99 @@ export type InvoiceReconciliationState = {
 
 function round2(n: number): number {
   return Math.round(n * 100) / 100;
+}
+
+/**
+ * Pure in-memory FIFO rebuild:
+ * - allocate oldest receipts to oldest invoices
+ * - create credit only for true excess after all invoice balances are satisfied
+ * - does NOT create any credit allocations to invoices (that is a separate step)
+ */
+export function simulateFromScratchFifoRebuild(params: {
+  receipts: RebuildReceiptLike[];
+  invoices: RebuildInvoiceLike[];
+  tolerance?: number;
+}): FromScratchRebuildOutput {
+  const tolerance = params.tolerance ?? 0.01;
+
+  const invoices = [...params.invoices]
+    .map((inv) => ({
+      id: inv.id,
+      invoiceDate: inv.invoiceDate,
+      totalBill: round2(toNumber(inv.totalBill)),
+      receiptPaid: 0,
+    }))
+    .sort((a, b) => {
+      const aT = a.invoiceDate.getTime();
+      const bT = b.invoiceDate.getTime();
+      return aT !== bT ? aT - bT : a.id - b.id;
+    });
+
+  const receipts = [...params.receipts]
+    .map((r) => ({
+      id: r.id,
+      paymentDate: r.paymentDate,
+      amountPaid: round2(toNumber(r.amountPaid)),
+    }))
+    .sort((a, b) => {
+      const aT = a.paymentDate.getTime();
+      const bT = b.paymentDate.getTime();
+      return aT !== bT ? aT - bT : a.id - b.id;
+    });
+
+  const receiptAllocations: FromScratchRebuildOutput['receiptAllocations'] = [];
+  const receiptCredits: FromScratchRebuildOutput['receiptCredits'] = [];
+
+  for (const receipt of receipts) {
+    let remaining = receipt.amountPaid;
+    if (remaining <= tolerance) continue;
+
+    for (const inv of invoices) {
+      if (remaining <= tolerance) break;
+      const outstanding = inv.totalBill - inv.receiptPaid;
+      if (outstanding <= tolerance) continue;
+
+      const applied = round2(Math.min(remaining, outstanding));
+      if (applied <= tolerance) continue;
+
+      receiptAllocations.push({
+        receiptId: receipt.id,
+        invoiceId: inv.id,
+        amountApplied: applied,
+      });
+      inv.receiptPaid = round2(inv.receiptPaid + applied);
+      remaining = round2(remaining - applied);
+    }
+
+    if (remaining > tolerance) {
+      receiptCredits.push({ receiptId: receipt.id, creditAmount: round2(remaining) });
+    }
+  }
+
+  const invoiceSummaries = invoices.map((inv) => {
+    const balanceRaw = inv.totalBill - inv.receiptPaid;
+    const balance = Math.max(
+      0,
+      round2(Math.abs(balanceRaw) <= tolerance ? 0 : balanceRaw),
+    );
+    return {
+      id: inv.id,
+      totalBill: inv.totalBill,
+      receiptPaid: inv.receiptPaid,
+      balance,
+    };
+  });
+
+  const totalCreditCreated = round2(
+    receiptCredits.reduce((sum, rc) => sum + toNumber(rc.creditAmount), 0),
+  );
+
+  return {
+    receiptAllocations,
+    receiptCredits,
+    invoices: invoiceSummaries,
+    totalCreditCreated,
+  };
 }
 
 export function makeOverpaymentFingerprint(

@@ -28,6 +28,7 @@ import { ReceiptEntity } from '../entities/payment.entity';
 import { CreditInvoiceAllocationEntity } from '../entities/credit-invoice-allocation.entity';
 import { ReceiptInvoiceAllocationEntity } from '../entities/receipt-invoice-allocation.entity';
 import { StudentCreditEntity } from '../entities/student-credit.entity';
+import { ReceiptCreditEntity } from '../entities/receipt-credit.entity';
 import {
   CreditTransactionEntity,
   CreditTransactionType,
@@ -2621,6 +2622,7 @@ export class InvoiceService {
    */
   async reconcileStudentFinancesForStudent(
     studentNumber: string,
+    options?: { fromScratch?: boolean },
   ): Promise<{
     success: boolean;
     message: string;
@@ -2674,12 +2676,375 @@ export class InvoiceService {
 
     return await this.dataSource.transaction(
       async (transactionalEntityManager) => {
-        await this.reconcileStudentFinances(
-          studentNumber,
-          transactionalEntityManager,
-          result,
-        );
+        if (options?.fromScratch === true) {
+          result.message = `Student finances rebuilt from scratch for ${studentNumber}`;
+          await this.reconcileStudentFinancesFromScratch(
+            studentNumber,
+            transactionalEntityManager,
+            result,
+          );
+        } else {
+          await this.reconcileStudentFinances(
+            studentNumber,
+            transactionalEntityManager,
+            result,
+          );
+        }
         return result;
+      },
+    );
+  }
+
+  private async reconcileStudentFinancesFromScratch(
+    studentNumber: string,
+    transactionalEntityManager: EntityManager,
+    result?: {
+      summary: {
+        invoicesProcessed: number;
+        invoicesCorrected: number;
+        receiptsProcessed: number;
+        voidedInvoicesUnlinked: number;
+        creditApplied: boolean;
+        creditAmount?: number;
+        creditAppliedToInvoice?: string;
+        invoicesWithBalance: number;
+        totalCreditBalance: number;
+      };
+      details?: {
+        correctedInvoices?: Array<{
+          invoiceNumber: string;
+          overpaymentAmount: number;
+          creditCreated: number;
+        }>;
+        creditApplication?: {
+          invoiceNumber: string;
+          amountApplied: number;
+        };
+      };
+    },
+  ): Promise<void> {
+    logStructured(
+      this.logger,
+      'log',
+      'reconciliation.fromScratch.start',
+      'Starting from-scratch student finance reconciliation',
+      { studentNumber },
+    );
+
+    const invoices = await transactionalEntityManager.find(InvoiceEntity, {
+      where: { student: { studentNumber }, isVoided: false },
+      relations: [
+        'student',
+        'enrol',
+        'bills',
+        'bills.fees',
+        'exemption',
+        'allocations',
+        'creditAllocations',
+      ],
+      order: { invoiceDate: 'ASC' },
+    });
+
+    const receipts = await transactionalEntityManager.find(ReceiptEntity, {
+      where: { student: { studentNumber }, isVoided: false },
+      relations: ['student', 'allocations', 'allocations.invoice', 'receiptCredits'],
+      order: { paymentDate: 'ASC' },
+    });
+
+    if (result) {
+      result.summary.invoicesProcessed = invoices.length;
+      result.summary.receiptsProcessed = receipts.length;
+      result.summary.invoicesCorrected = 0;
+      result.summary.voidedInvoicesUnlinked = 0;
+      result.summary.creditApplied = false;
+      result.summary.creditAmount = 0;
+      result.summary.creditAppliedToInvoice = undefined;
+    }
+
+    const invoiceIds = invoices.map((i) => i.id).filter(Boolean) as number[];
+    const receiptIds = receipts.map((r) => r.id).filter(Boolean) as number[];
+
+    // Ensure a StudentCredit row exists (even if amount becomes 0).
+    let studentCredit = await transactionalEntityManager.findOne(StudentCreditEntity, {
+      where: { studentNumber },
+      relations: ['student'],
+    });
+    if (!studentCredit) {
+      const student = await transactionalEntityManager.findOne(StudentsEntity, {
+        where: { studentNumber },
+      });
+      if (student) {
+        studentCredit = transactionalEntityManager.create(StudentCreditEntity, {
+          student,
+          studentNumber,
+          amount: 0,
+          lastCreditSource: 'Reconciliation rebuild',
+        });
+        studentCredit = await transactionalEntityManager.save(studentCredit);
+      }
+    }
+
+    const studentCreditId = studentCredit?.id;
+
+    // --- Delete derived records (hybrid hard reset) ---
+    if (invoiceIds.length > 0) {
+      await transactionalEntityManager.query(
+        `DELETE FROM credit_invoice_allocations WHERE "invoiceId" = ANY($1)`,
+        [invoiceIds],
+      );
+    }
+    if (receiptIds.length > 0) {
+      await transactionalEntityManager.query(
+        `DELETE FROM receipt_invoice_allocations WHERE "receiptId" = ANY($1)`,
+        [receiptIds],
+      );
+      await transactionalEntityManager.query(
+        `DELETE FROM receipt_credits WHERE "receiptId" = ANY($1)`,
+        [receiptIds],
+      );
+    }
+    if (studentCreditId) {
+      // Delete only transactions that are tied to receipts/invoices (system-generated, rebuildable).
+      await transactionalEntityManager.query(
+        `DELETE FROM credit_transactions
+         WHERE "studentCreditId" = $1
+           AND ("relatedReceiptId" IS NOT NULL OR "relatedInvoiceId" IS NOT NULL)`,
+        [studentCreditId],
+      );
+
+      // Reset credit balance based on any remaining manual transactions (both related ids null).
+      const manualTx = await transactionalEntityManager.query(
+        `SELECT COALESCE(SUM(amount), 0) AS total
+         FROM credit_transactions
+         WHERE "studentCreditId" = $1
+           AND "relatedReceiptId" IS NULL
+           AND "relatedInvoiceId" IS NULL`,
+        [studentCreditId],
+      );
+      const manualBalance = Math.max(0, Number(manualTx?.[0]?.total ?? 0));
+      studentCredit.amount = manualBalance;
+      studentCredit.lastCreditSource = 'Reconciliation rebuild';
+      await transactionalEntityManager.save(studentCredit);
+    }
+
+    // --- Reset invoice financial fields (recalculate net totals) ---
+    for (const invoice of invoices) {
+      const netTotal = this.calculateNetBillAmount(
+        invoice.bills || [],
+        (invoice.exemption as any) || null,
+      );
+      invoice.exemptedAmount = this._calculateExemptionAmount(invoice);
+      invoice.totalBill = netTotal;
+      invoice.amountPaidOnInvoice = 0;
+      invoice.balance = netTotal;
+      invoice.status = this.getInvoiceStatus(invoice);
+    }
+    if (invoices.length > 0) {
+      await transactionalEntityManager.save(InvoiceEntity, invoices);
+    }
+
+    // --- FIFO allocate receipts to invoices ---
+    const sortedInvoices = [...invoices].sort((a, b) => {
+      const aT = new Date(a.invoiceDate).getTime();
+      const bT = new Date(b.invoiceDate).getTime();
+      return aT !== bT ? aT - bT : (a.id || 0) - (b.id || 0);
+    });
+
+    const newReceiptAllocations: ReceiptInvoiceAllocationEntity[] = [];
+    const newReceiptCredits: ReceiptCreditEntity[] = [];
+    const newCreditTransactions: CreditTransactionEntity[] = [];
+
+    for (const receipt of receipts) {
+      let remaining = Number(receipt.amountPaid || 0);
+      if (!(remaining > 0)) continue;
+
+      for (const invoice of sortedInvoices) {
+        if (!(remaining > 0)) break;
+        const outstanding = Number(invoice.balance || 0);
+        if (!(outstanding > 0.01)) continue;
+
+        const applyAmount = Math.min(remaining, outstanding);
+        if (!(applyAmount > 0)) continue;
+
+        const alloc = transactionalEntityManager.create(
+          ReceiptInvoiceAllocationEntity,
+          {
+            receipt,
+            invoice: { id: invoice.id } as InvoiceEntity,
+            amountApplied: applyAmount,
+            allocationDate: receipt.paymentDate || new Date(),
+          },
+        );
+        newReceiptAllocations.push(alloc);
+
+        invoice.amountPaidOnInvoice = Math.min(
+          Number(invoice.amountPaidOnInvoice || 0) + applyAmount,
+          Number(invoice.totalBill || 0),
+        );
+        invoice.balance = Math.max(0, Number(invoice.totalBill || 0) - Number(invoice.amountPaidOnInvoice || 0));
+        invoice.status = this.getInvoiceStatus(invoice);
+
+        remaining -= applyAmount;
+      }
+
+      // Any remaining becomes credit from this receipt.
+      if (studentCredit && remaining > 0.01) {
+        studentCredit.amount = Number(studentCredit.amount || 0) + remaining;
+        studentCredit.lastCreditSource = `Overpayment from Receipt ${receipt.receiptNumber} (rebuild)`;
+
+        const receiptCredit = transactionalEntityManager.create(
+          ReceiptCreditEntity,
+          {
+            receipt,
+            studentCredit,
+            creditAmount: remaining,
+          },
+        );
+        newReceiptCredits.push(receiptCredit);
+
+        const creditTx = transactionalEntityManager.create(
+          CreditTransactionEntity,
+          {
+            studentCredit,
+            amount: remaining,
+            transactionType: CreditTransactionType.CREDIT,
+            source: `Overpayment from Receipt ${receipt.receiptNumber} (reconciliation rebuild)`,
+            relatedReceiptId: receipt.id,
+            performedBy: 'system',
+            transactionDate: new Date(),
+          },
+        );
+        newCreditTransactions.push(creditTx);
+      }
+    }
+
+    // Save allocations/credits/invoice updates so far.
+    if (newReceiptAllocations.length > 0) {
+      await transactionalEntityManager.save(
+        ReceiptInvoiceAllocationEntity,
+        newReceiptAllocations,
+      );
+    }
+    if (newReceiptCredits.length > 0) {
+      await transactionalEntityManager.save(ReceiptCreditEntity, newReceiptCredits);
+    }
+    if (newCreditTransactions.length > 0) {
+      await transactionalEntityManager.save(CreditTransactionEntity, newCreditTransactions);
+    }
+    if (studentCredit) {
+      await transactionalEntityManager.save(StudentCreditEntity, studentCredit);
+    }
+    if (sortedInvoices.length > 0) {
+      await transactionalEntityManager.save(InvoiceEntity, sortedInvoices);
+    }
+
+    // --- Apply existing credit FIFO to remaining invoice balances (if any) ---
+    // This can happen if there is preserved manual credit and/or receipts were insufficient.
+    const creditAllocationsToSave: CreditInvoiceAllocationEntity[] = [];
+    let totalCreditApplied = 0;
+
+    if (studentCredit && Number(studentCredit.amount) > 0.01) {
+      for (const invoice of sortedInvoices) {
+        const outstanding = Number(invoice.balance || 0);
+        if (!(outstanding > 0.01)) continue;
+        const availableCredit = Number(studentCredit.amount || 0);
+        if (!(availableCredit > 0.01)) break;
+
+        const applyAmount = Math.min(outstanding, availableCredit);
+        if (!(applyAmount > 0.01)) continue;
+
+        const relatedReceiptId = await this.creditService.determineReceiptSourceForCredit(
+          studentCredit,
+          applyAmount,
+          transactionalEntityManager,
+        );
+
+        // Update credit balance and log transaction
+        studentCredit.amount = Math.max(0, Number(studentCredit.amount) - applyAmount);
+        studentCredit.lastCreditSource = `Deducted: Applied to Invoice ${invoice.invoiceNumber} (rebuild)`;
+
+        const tx = transactionalEntityManager.create(CreditTransactionEntity, {
+          studentCredit,
+          amount: -applyAmount,
+          transactionType: CreditTransactionType.APPLICATION,
+          source: `Applied to Invoice ${invoice.invoiceNumber} (reconciliation rebuild)`,
+          relatedInvoiceId: invoice.id,
+          performedBy: 'system',
+          transactionDate: new Date(),
+        });
+        await transactionalEntityManager.save(CreditTransactionEntity, tx);
+
+        const creditAlloc = transactionalEntityManager.create(
+          CreditInvoiceAllocationEntity,
+          {
+            studentCredit,
+            invoice: { id: invoice.id } as InvoiceEntity,
+            amountApplied: applyAmount,
+            relatedReceiptId: relatedReceiptId || undefined,
+            allocationDate: new Date(),
+          },
+        );
+        creditAllocationsToSave.push(creditAlloc);
+
+        // Update invoice (single ledger model)
+        const newPaid = Math.min(
+          Number(invoice.amountPaidOnInvoice || 0) + applyAmount,
+          Number(invoice.totalBill || 0),
+        );
+        invoice.amountPaidOnInvoice = newPaid;
+        invoice.balance = Math.max(0, Number(invoice.totalBill || 0) - newPaid);
+        invoice.status = this.getInvoiceStatus(invoice);
+
+        totalCreditApplied += applyAmount;
+      }
+    }
+
+    if (creditAllocationsToSave.length > 0) {
+      await transactionalEntityManager.save(
+        CreditInvoiceAllocationEntity,
+        creditAllocationsToSave,
+      );
+      result && (result.summary.creditApplied = true);
+      result && (result.summary.creditAmount = totalCreditApplied);
+      totalCreditApplied > 0 &&
+        result &&
+        (result.summary.creditAppliedToInvoice =
+          sortedInvoices.find((i) => Number(i.balance || 0) <= 0.01)?.invoiceNumber);
+    }
+
+    if (studentCredit) {
+      await transactionalEntityManager.save(StudentCreditEntity, studentCredit);
+    }
+
+    // Final invoice verification pass (caps + status)
+    for (const invoice of sortedInvoices) {
+      await this.verifyAndRecalculateInvoiceBalance(invoice, transactionalEntityManager);
+    }
+
+    // Final credit verification
+    await this.creditService.verifyStudentCreditBalance(studentNumber, transactionalEntityManager);
+
+    const finalCredit = await this.creditService.getStudentCredit(
+      studentNumber,
+      transactionalEntityManager,
+    );
+    if (result) {
+      result.summary.totalCreditBalance = finalCredit ? Number(finalCredit.amount) : 0;
+      result.summary.invoicesWithBalance = sortedInvoices.filter(
+        (inv) => Number(inv.balance || 0) > 0.01,
+      ).length;
+    }
+
+    logStructured(
+      this.logger,
+      'log',
+      'reconciliation.fromScratch.complete',
+      'From-scratch student finance reconciliation completed',
+      {
+        studentNumber,
+        invoicesCount: sortedInvoices.length,
+        receiptsCount: receipts.length,
+        creditBalance: finalCredit ? Number(finalCredit.amount) : 0,
       },
     );
   }

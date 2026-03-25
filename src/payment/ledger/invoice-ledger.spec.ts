@@ -4,6 +4,7 @@ import {
   computeNetBillAmount,
   computeGrossBillAmount,
   simulateReconciliationRun,
+  simulateFromScratchFifoRebuild,
 } from './invoice-ledger';
 import { FeesNames } from '../../finance/models/fees-names.enum';
 import { ExemptionType } from '../../exemptions/enums/exemptions-type.enum';
@@ -247,6 +248,26 @@ describe('Billing ledger (in-memory)', () => {
 
       // gross = 80, exemption = 55, net = 25
       expect(computeNetBillAmount(staffSiblingBills as any, staffExemption as any)).toBe(25);
+    });
+
+    it('From-scratch FIFO rebuild: fully-paid invoice creates no credit, excess becomes credit', () => {
+      const invoices = [
+        { id: 1, invoiceDate: new Date('2026-01-01'), totalBill: 3140 },
+      ];
+      const receipts = [
+        { id: 10, paymentDate: new Date('2026-01-02'), amountPaid: 3140 },
+      ];
+
+      const out = simulateFromScratchFifoRebuild({ invoices, receipts });
+      expect(out.invoices[0].balance).toBe(0);
+      expect(out.receiptCredits).toHaveLength(0);
+
+      const out2 = simulateFromScratchFifoRebuild({
+        invoices,
+        receipts: [{ id: 11, paymentDate: new Date('2026-01-02'), amountPaid: 6280 }],
+      });
+      expect(out2.invoices[0].balance).toBe(0);
+      expect(out2.receiptCredits).toEqual([{ receiptId: 11, creditAmount: 3140 }]);
     });
   });
 });

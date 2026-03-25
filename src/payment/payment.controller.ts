@@ -430,8 +430,11 @@ export class PaymentController {
   reconcileStudentFinances(
     @Param('studentNumber') studentNumber: string,
     @GetUser() profile: TeachersEntity,
+    @Body('fromScratch') fromScratch?: boolean,
   ) {
-    return this.paymentService.reconcileStudentFinances(studentNumber);
+    return this.paymentService.reconcileStudentFinances(studentNumber, {
+      fromScratch: fromScratch === true,
+    });
   }
 
 }

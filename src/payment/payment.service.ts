@@ -404,7 +404,10 @@ export class PaymentService {
    * @param studentNumber - The student number to reconcile
    * @returns Detailed reconciliation results
    */
-  async reconcileStudentFinances(studentNumber: string): Promise<{
+  async reconcileStudentFinances(
+    studentNumber: string,
+    options?: { fromScratch?: boolean },
+  ): Promise<{
     success: boolean;
     message: string;
     studentNumber: string;
@@ -444,6 +447,7 @@ export class PaymentService {
       // It will handle the transaction internally and return detailed results
       const result = await this.invoiceService.reconcileStudentFinancesForStudent(
         studentNumber,
+        { fromScratch: options?.fromScratch === true },
       );
 
       logStructured(
