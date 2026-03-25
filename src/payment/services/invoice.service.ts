@@ -2925,10 +2925,24 @@ export class InvoiceService {
 
     // Save allocations/credits/invoice updates so far.
     if (newReceiptAllocations.length > 0) {
-      await transactionalEntityManager.save(
-        ReceiptInvoiceAllocationEntity,
-        newReceiptAllocations,
-      );
+      // IMPORTANT:
+      // Do NOT use `save()` here. In production, TypeORM's subject executor has emitted UPDATEs
+      // that attempt to set allocation.invoiceId to NULL (likely due to relation synchronization),
+      // which violates the NOT NULL constraint on `receipt_invoice_allocations.invoiceId`.
+      // Use a direct insert of scalar columns to make FK persistence deterministic.
+      await transactionalEntityManager
+        .createQueryBuilder()
+        .insert()
+        .into(ReceiptInvoiceAllocationEntity)
+        .values(
+          newReceiptAllocations.map((a) => ({
+            receiptId: a.receiptId ?? a.receipt?.id,
+            invoiceId: a.invoiceId ?? a.invoice?.id,
+            amountApplied: a.amountApplied,
+            allocationDate: a.allocationDate,
+          })),
+        )
+        .execute();
     }
     if (newReceiptCredits.length > 0) {
       await transactionalEntityManager.save(ReceiptCreditEntity, newReceiptCredits);
