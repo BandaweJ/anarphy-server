@@ -6,8 +6,19 @@ export class ReceiptsEnrolNullable1764048000000 implements MigrationInterface {
   public async up(queryRunner: QueryRunner): Promise<void> {
     // Make enrolId nullable (student can pay even if not enrolled)
     await queryRunner.query(`
-      ALTER TABLE IF EXISTS "receipts"
-      ALTER COLUMN IF EXISTS "enrolId" DROP NOT NULL
+      DO $$
+      BEGIN
+        IF EXISTS (
+          SELECT 1
+          FROM information_schema.columns
+          WHERE table_name = 'receipts'
+            AND column_name = 'enrolId'
+        ) THEN
+          ALTER TABLE "receipts"
+          ALTER COLUMN "enrolId" DROP NOT NULL;
+        END IF;
+      END
+      $$;
     `);
 
     // Ensure FK exists with ON DELETE SET NULL (instead of blocking)
@@ -64,8 +75,19 @@ export class ReceiptsEnrolNullable1764048000000 implements MigrationInterface {
 
     // Revert to NOT NULL (original behavior)
     await queryRunner.query(`
-      ALTER TABLE IF EXISTS "receipts"
-      ALTER COLUMN IF EXISTS "enrolId" SET NOT NULL
+      DO $$
+      BEGIN
+        IF EXISTS (
+          SELECT 1
+          FROM information_schema.columns
+          WHERE table_name = 'receipts'
+            AND column_name = 'enrolId'
+        ) THEN
+          ALTER TABLE "receipts"
+          ALTER COLUMN "enrolId" SET NOT NULL;
+        END IF;
+      END
+      $$;
     `);
   }
 }
