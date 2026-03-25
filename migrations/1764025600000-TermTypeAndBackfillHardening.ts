@@ -13,8 +13,14 @@ export class TermTypeAndBackfillHardening1764025600000 implements MigrationInter
     await queryRunner.query(`
       DO $$
       BEGIN
+        -- Postgres allows at most ONE primary key per table.
+        -- Some DBs already have a PK on "terms" (possibly with a different constraint name),
+        -- so we only add PK_terms_id if no primary key constraint exists at all.
         IF NOT EXISTS (
-          SELECT 1 FROM pg_constraint WHERE conname = 'PK_terms_id'
+          SELECT 1
+          FROM pg_constraint
+          WHERE conrelid = 'terms'::regclass
+            AND contype = 'p'
         ) THEN
           ALTER TABLE "terms" ADD CONSTRAINT "PK_terms_id" PRIMARY KEY ("id");
         END IF;
