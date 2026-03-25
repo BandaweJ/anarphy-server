@@ -2546,11 +2546,13 @@ export class InvoiceService {
     // 2. Later, if we use amountPaidOnInvoice (50) AND count allocations (50) = 100 (WRONG!)
     const isNewInvoice = !invoice.id;
 
-    const amountPaid = isNewInvoice
+    const amountPaidRaw = isNewInvoice
       ? Number(invoice.amountPaidOnInvoice || 0)
       : receiptAllocations + creditAllocations;
 
-    const balance = Math.max(0, totalBill - (isNewInvoice ? amountPaid : amountPaid));
+    // Cap amountPaidOnInvoice so it never exceeds the invoice total.
+    const amountPaid = Math.min(amountPaidRaw, totalBill);
+    const balance = Math.max(0, totalBill - amountPaid);
 
     return { totalBill, amountPaid, balance };
   }
@@ -2842,6 +2844,39 @@ export class InvoiceService {
       );
     }
 
+    // Step 3.5: Ensure receipt allocations are correctly linked to invoices
+    // before we apply student credit (prevents credit being applied to an invoice
+    // whose receipt allocations weren't linked yet, which can lead to redundant
+    // credit allocations on otherwise-fully-paid invoices).
+    for (const receipt of receipts) {
+      await this.verifyReceiptAllocations(
+        receipt,
+        transactionalEntityManager,
+      );
+    }
+
+    // Reload and re-verify balances after potential allocation-link fixes
+    const correctedInvoicesAfterReceiptFix = await transactionalEntityManager.find(
+      InvoiceEntity,
+      {
+        where: { student: { studentNumber }, isVoided: false },
+        relations: [
+          'allocations',
+          'creditAllocations',
+          'bills',
+          'bills.fees',
+        ],
+        order: { invoiceDate: 'ASC' }, // Oldest first
+      },
+    );
+
+    for (const invoice of correctedInvoicesAfterReceiptFix) {
+      await this.verifyAndRecalculateInvoiceBalance(
+        invoice,
+        transactionalEntityManager,
+      );
+    }
+
     // Step 4: Verify credit balance
     await this.creditService.verifyStudentCreditBalance(
       studentNumber,
@@ -2987,13 +3022,9 @@ export class InvoiceService {
     // backfilling receipts would risk double-counting the same cash.
     // The credit allocations themselves already provide the ledger truth.
 
-    // Step 7: Verify receipt allocations match invoice payments
-    for (const receipt of receipts) {
-      await this.verifyReceiptAllocations(
-        receipt,
-        transactionalEntityManager,
-      );
-    }
+    // Step 7: (SKIPPED)
+    // We already verified receipt allocations before applying credit to avoid
+    // redundant credit allocations caused by missing/incorrect allocation links.
 
     // Step 8: Final verification - reload and verify all invoices are saved correctly
     // This ensures status is updated for all invoices after all corrections and credit applications
@@ -3556,37 +3587,26 @@ export class InvoiceService {
           );
 
           if (updatedInvoice) {
-            // Get set of receipt IDs that have direct allocations
-            const receiptIdsWithDirectAllocations = new Set<number>();
+            // Single source of truth: invoice.balance = totalBill - (receiptAllocations + creditAllocations)
             const receiptAllocated = (updatedInvoice.allocations || []).reduce(
-              (sum, alloc) => {
-                if (alloc.receipt?.id) {
-                  receiptIdsWithDirectAllocations.add(alloc.receipt.id);
-                }
-                return sum + Number(alloc.amountApplied || 0);
-              },
+              (sum, alloc) => sum + Number(alloc.amountApplied || 0),
               0,
             );
-            
-            // Exclude credit allocations from receipts that already have direct allocations
-            const creditAllocated = (updatedInvoice.creditAllocations || []).reduce(
-              (sum, alloc) => {
-                if (alloc.relatedReceiptId && receiptIdsWithDirectAllocations.has(alloc.relatedReceiptId)) {
-                  return sum; // Don't count this credit allocation
-                }
-                return sum + Number(alloc.amountApplied || 0);
-              },
+            const creditAllocated = (
+              updatedInvoice.creditAllocations || []
+            ).reduce(
+              (sum, alloc) => sum + Number(alloc.amountApplied || 0),
               0,
             );
+            const totalPaid = receiptAllocated + creditAllocated;
 
-            // Match ledger logic: Amount Paid = receipt allocations only
-            // Credit allocations don't count as payments (they're display-only)
             const invoiceTotalBill = Number(updatedInvoice.totalBill || 0);
-            updatedInvoice.amountPaidOnInvoice = receiptAllocated;
-            updatedInvoice.balance = Math.max(
-              0,
-              invoiceTotalBill - receiptAllocated,
+            // Cap amountPaidOnInvoice so it never exceeds the invoice total.
+            updatedInvoice.amountPaidOnInvoice = Math.min(
+              totalPaid,
+              invoiceTotalBill,
             );
+            updatedInvoice.balance = Math.max(0, invoiceTotalBill - totalPaid);
             updatedInvoice.status = this.getInvoiceStatus(updatedInvoice);
 
             await transactionalEntityManager.save(updatedInvoice);
