@@ -1450,11 +1450,6 @@ export class InvoiceService {
       'exemption',
     ];
 
-    const baseWhere = {
-      student: { studentNumber },
-      enrol: { termId },
-    };
-
     const activeInvoice = await this.invoiceRepository
       .createQueryBuilder('invoice')
       .leftJoinAndSelect('invoice.student', 'student')
@@ -1468,10 +1463,20 @@ export class InvoiceService {
       .getOne();
 
     if (activeInvoice) {
-      const voidedInvoice = await this.invoiceRepository.findOne({
-        where: { ...baseWhere, isVoided: true },
-        select: ['id', 'invoiceNumber', 'voidedAt', 'voidedBy'],
-      });
+      const voidedInvoice = await this.invoiceRepository
+        .createQueryBuilder('invoice')
+        .leftJoin('invoice.student', 'student')
+        .leftJoin('invoice.enrol', 'enrol')
+        .where('student.studentNumber = :studentNumber', { studentNumber })
+        .andWhere('enrol.termId = :termId', { termId })
+        .andWhere('invoice.isVoided = true')
+        .select([
+          'invoice.id',
+          'invoice.invoiceNumber',
+          'invoice.voidedAt',
+          'invoice.voidedBy',
+        ])
+        .getOne();
 
       const response: InvoiceResponseDto = { invoice: activeInvoice };
       if (voidedInvoice) {
@@ -1486,10 +1491,17 @@ export class InvoiceService {
     }
 
     if (includeVoided) {
-      const voidedInvoice = await this.invoiceRepository.findOne({
-        where: { ...baseWhere, isVoided: true },
-        relations,
-      });
+      const voidedInvoice = await this.invoiceRepository
+        .createQueryBuilder('invoice')
+        .leftJoinAndSelect('invoice.student', 'student')
+        .leftJoinAndSelect('invoice.enrol', 'enrol')
+        .leftJoinAndSelect('invoice.bills', 'bills')
+        .leftJoinAndSelect('bills.fees', 'fees')
+        .leftJoinAndSelect('invoice.exemption', 'exemption')
+        .where('student.studentNumber = :studentNumber', { studentNumber })
+        .andWhere('enrol.termId = :termId', { termId })
+        .andWhere('invoice.isVoided = true')
+        .getOne();
       if (voidedInvoice) {
         return { invoice: voidedInvoice };
       }
@@ -1500,10 +1512,20 @@ export class InvoiceService {
       termId,
     );
 
-    const voidedInvoice = await this.invoiceRepository.findOne({
-      where: { ...baseWhere, isVoided: true },
-      select: ['id', 'invoiceNumber', 'voidedAt', 'voidedBy'],
-    });
+    const voidedInvoice = await this.invoiceRepository
+      .createQueryBuilder('invoice')
+      .leftJoin('invoice.student', 'student')
+      .leftJoin('invoice.enrol', 'enrol')
+      .where('student.studentNumber = :studentNumber', { studentNumber })
+      .andWhere('enrol.termId = :termId', { termId })
+      .andWhere('invoice.isVoided = true')
+      .select([
+        'invoice.id',
+        'invoice.invoiceNumber',
+        'invoice.voidedAt',
+        'invoice.voidedBy',
+      ])
+      .getOne();
 
     const response: InvoiceResponseDto = { invoice: emptyInvoice };
     if (voidedInvoice) {

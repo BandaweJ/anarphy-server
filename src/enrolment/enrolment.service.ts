@@ -527,13 +527,12 @@ export class EnrolmentService {
     studentNumber: string,
     termId: number,
   ): Promise<EnrolEntity> {
-    const enroledStudent = await this.enrolmentRepository.findOne({
-      where: {
-        student: { studentNumber },
-        termId,
-      },
-      relations: ['student'],
-    });
+    const enroledStudent = await this.enrolmentRepository
+      .createQueryBuilder('enrol')
+      .leftJoinAndSelect('enrol.student', 'student')
+      .where('student.studentNumber = :studentNumber', { studentNumber })
+      .andWhere('enrol.termId = :termId', { termId })
+      .getOne();
 
     if (!enroledStudent) {
       const student = await this.resourceById.getStudentByStudentNumber(
