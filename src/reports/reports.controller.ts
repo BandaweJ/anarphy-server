@@ -26,6 +26,7 @@ import { PermissionsGuard } from 'src/auth/guards/permissions.guard';
 import { HasPermissions } from 'src/auth/decorators/has-permissions.decorator';
 import { PERMISSIONS } from 'src/auth/models/permissions.constants';
 import { SetReportReleaseDto } from './dtos/report-release.dto';
+import { ReportExtraActivitiesDto } from './dtos/report-extra-activities.dto';
 
 @Controller('reports')
 @UseGuards(AuthGuard(), PermissionsGuard)
@@ -93,6 +94,18 @@ export class ReportsController {
       throw new BadRequestException('Comment text is required');
     }
     return this.reportsService.saveFormTeacherComment(comment, profile);
+  }
+
+  @Post('/save/extra-activities')
+  @HasPermissions(PERMISSIONS.REPORTS.EDIT_COMMENT)
+  saveExtraActivities(
+    @Body() payload: ReportExtraActivitiesDto,
+    @GetUser() profile: TeachersEntity | StudentsEntity | ParentsEntity,
+  ) {
+    if (!payload || !payload.report) {
+      throw new BadRequestException('Report data is required');
+    }
+    return this.reportsService.saveExtraActivities(payload, profile);
   }
 
   @Get('/view/term/:termId/:name/:examType')

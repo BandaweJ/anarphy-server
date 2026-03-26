@@ -21,4 +21,6 @@ export class ReportModel {
   symbols: number[];
   // eslint-disable-next-line prettier/prettier
   examType?: string;
+  nextTermOpeningDay?: string | null;
+  extraCurricularActivities?: string[];
 }

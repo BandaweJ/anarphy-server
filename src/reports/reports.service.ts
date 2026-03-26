@@ -30,6 +30,7 @@ import { ResourceByIdService } from '../resource-by-id/resource-by-id.service';
 import { SystemSettingsService } from '../system/services/system-settings.service';
 import { ROLES } from '../auth/models/roles.enum';
 import { ReportReleaseEntity } from './entities/report-release.entity';
+import { ReportExtraActivitiesDto } from './dtos/report-extra-activities.dto';
 // import bannerImagePath from '../assets/images/banner3.png';
 
 @Injectable()
@@ -250,11 +251,12 @@ export class ReportsService {
     savedReports.forEach((savedRepEntity) => {
       reps.forEach((generatedRep) => {
         if (savedRepEntity.studentNumber === generatedRep.studentNumber) {
-          // Access the headComment from the inner 'report' property
-          if (savedRepEntity.report?.headComment) {
-            generatedRep.report.headComment = savedRepEntity.report.headComment;
-            generatedRep.id = savedRepEntity.id;
-          }
+          generatedRep.id = savedRepEntity.id;
+          generatedRep.report.headComment = savedRepEntity.report?.headComment || '';
+          generatedRep.report.classTrComment =
+            savedRepEntity.report?.classTrComment || '';
+          generatedRep.report.extraCurricularActivities =
+            savedRepEntity.report?.extraCurricularActivities || [];
           // else if (savedRepEntity?.report?.report.headComment) {
           //   generatedRep.report.headComment =
           //     savedRepEntity.report.report.headComment;
@@ -869,7 +871,7 @@ export class ReportsService {
       this.normalizeReportStructure(rep),
     );
 
-    return normalizedReports;
+    return this.hydrateReportsWithNextTermOpeningDay(normalizedReports);
   }
 
   async saveHeadComment(
@@ -934,6 +936,36 @@ export class ReportsService {
     return await this.reportsRepository.save(existingReport);
   }
 
+  async saveExtraActivities(
+    payload: ReportExtraActivitiesDto,
+    profile: StudentsEntity | TeachersEntity | ParentsEntity,
+  ): Promise<ReportsEntity> {
+    if (!payload || !payload.report) {
+      throw new NotFoundException('Report data is missing');
+    }
+
+    const existingReport = await this.reportsRepository.findOne({
+      where: {
+        id: payload.report.id,
+      },
+      relations: ['student'],
+    });
+
+    if (!existingReport) {
+      throw new NotFoundException('Report not found in database');
+    }
+    if (!existingReport.report) {
+      throw new BadRequestException('Report model data is missing in database record');
+    }
+
+    existingReport.report.extraCurricularActivities = (payload.activities || [])
+      .map((item) => (item || '').trim())
+      .filter((item) => item.length > 0)
+      .slice(0, 20);
+
+    return await this.reportsRepository.save(existingReport);
+  }
+
   async viewReports(
     termId: number,
     name: string,
@@ -973,7 +1005,7 @@ export class ReportsService {
       this.normalizeReportStructure(rep),
     );
 
-    return normalizedReports;
+    return this.hydrateReportsWithNextTermOpeningDay(normalizedReports);
   }
 
   async viewReportsByTermId(
@@ -1026,7 +1058,10 @@ export class ReportsService {
       throw new NotFoundException(
         `Report for student ${studentNumber} not found for termId ${termId} and examtype ${examType}`,
       );
-    return await this.generatePDF(report);
+    const hydrated = await this.hydrateReportWithNextTermOpeningDay(
+      this.normalizeReportStructure(report),
+    );
+    return await this.generatePDF(hydrated);
   }
 
   async downloadReportByTermId(
@@ -1206,6 +1241,18 @@ export class ReportsService {
           margin + columnWidth * 13,
           rowHeight * 6,
         );
+
+      const openingDayText = report.report.nextTermOpeningDay
+        ? new Date(report.report.nextTermOpeningDay).toDateString()
+        : 'TBA';
+      doc
+        .fillColor(blackColor)
+        .fontSize(defaultFontSize - 2)
+        .text('Next Term Opening Day: ', margin, rowHeight * 6 + 12, {
+          continued: true,
+        })
+        .fillColor(blueColor)
+        .text(openingDayText);
 
       //start table
 
@@ -1558,6 +1605,23 @@ export class ReportsService {
         .lineTo(0, 0)
         .stroke();
 
+      const activities = report.report.extraCurricularActivities || [];
+      if (activities.length > 0) {
+        const activityText = activities.map((a) => `- ${a}`).join('\n');
+        doc
+          .fillColor(blackColor)
+          .fontSize(defaultFontSize - 3)
+          .text(
+            `Extra Curricular Activities:\n${activityText}`,
+            margin,
+            rowHeight * 27 + 8,
+            {
+              width: columnWidth * 18,
+              align: 'left',
+            },
+          );
+      }
+
       doc.end();
 
       const buffer = [];
@@ -1590,6 +1654,56 @@ export class ReportsService {
     }
     // If it's already in the single nested structure, 'reportEntity.report' remains as is.
     return reportEntity;
+  }
+
+  private async hydrateReportsWithNextTermOpeningDay(
+    reports: ReportsEntity[],
+  ): Promise<ReportsEntity[]> {
+    return Promise.all(
+      reports.map((report) => this.hydrateReportWithNextTermOpeningDay(report)),
+    );
+  }
+
+  private async hydrateReportWithNextTermOpeningDay(
+    report: ReportsEntity,
+  ): Promise<ReportsEntity> {
+    if (!report?.report) return report;
+    report.report.nextTermOpeningDay = await this.resolveNextTermOpeningDay(
+      report.termId,
+      report.num,
+      report.year,
+    );
+    report.report.extraCurricularActivities =
+      report.report.extraCurricularActivities || [];
+    return report;
+  }
+
+  private async resolveNextTermOpeningDay(
+    termId?: number,
+    num?: number,
+    year?: number,
+  ): Promise<string | null> {
+    const terms = await this.enrolmentService.getAllTerms();
+    if (!terms || terms.length === 0) return null;
+
+    let current = termId
+      ? terms.find((t) => t.id === termId)
+      : undefined;
+
+    if (!current && num !== undefined && year !== undefined) {
+      current = terms.find((t) => t.num === num && t.year === year);
+    }
+    if (!current) return null;
+
+    const currentStart = new Date(current.startDate).getTime();
+    const next = [...terms]
+      .filter((t) => new Date(t.startDate).getTime() > currentStart)
+      .sort(
+        (a, b) =>
+          new Date(a.startDate).getTime() - new Date(b.startDate).getTime(),
+      )[0];
+
+    return next?.startDate ? new Date(next.startDate).toISOString() : null;
   }
 
   /**
