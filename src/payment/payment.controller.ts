@@ -256,6 +256,19 @@ export class PaymentController {
     return this.paymentService.getInvoiceStatsByTermId(termId);
   }
 
+  @Get('invoice/:studentNumber/term/:termId')
+  generateInvoiceByTermId(
+    @Param('studentNumber') studentNumber: string,
+    @Param('termId', ParseIntPipe) termId: number,
+    @Query('includeVoided') includeVoided?: string,
+  ) {
+    return this.paymentService.getInvoiceByTermId(
+      studentNumber,
+      termId,
+      includeVoided === 'true',
+    );
+  }
+
   @Get('invoice/:studentNumber/:num/:year')
   generateInvoice(
     @Param('studentNumber') studentNumber: string,
@@ -267,19 +280,6 @@ export class PaymentController {
       studentNumber,
       num,
       year,
-      includeVoided === 'true',
-    );
-  }
-
-  @Get('invoice/:studentNumber/term/:termId')
-  generateInvoiceByTermId(
-    @Param('studentNumber') studentNumber: string,
-    @Param('termId', ParseIntPipe) termId: number,
-    @Query('includeVoided') includeVoided?: string,
-  ) {
-    return this.paymentService.getInvoiceByTermId(
-      studentNumber,
-      termId,
       includeVoided === 'true',
     );
   }
