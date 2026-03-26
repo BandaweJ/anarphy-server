@@ -523,6 +523,30 @@ export class EnrolmentService {
     return enroledStudent;
   }
 
+  async getOneEnrolmentByTermId(
+    studentNumber: string,
+    termId: number,
+  ): Promise<EnrolEntity> {
+    const enroledStudent = await this.enrolmentRepository.findOne({
+      where: {
+        student: { studentNumber },
+        termId,
+      },
+      relations: ['student'],
+    });
+
+    if (!enroledStudent) {
+      const student = await this.resourceById.getStudentByStudentNumber(
+        studentNumber,
+      );
+      throw new NotFoundException(
+        `Student (${studentNumber}) ${student.surname} ${student.name} not enroled in termId ${termId}`,
+      );
+    }
+
+    return enroledStudent;
+  }
+
   async getEnrolmentByClass(
     name: string,
     num: number,

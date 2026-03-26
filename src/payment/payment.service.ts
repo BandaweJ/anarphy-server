@@ -339,8 +339,11 @@ export class PaymentService {
     termId: number,
     includeVoided: boolean = false,
   ) {
-    const term = await this.enrolmentService.getOneTermById(termId);
-    return this.getInvoice(studentNumber, term.num, term.year, includeVoided);
+    return this.invoiceService.getInvoiceByTermId(
+      studentNumber,
+      termId,
+      includeVoided,
+    );
   }
 
   async getInvoiceByInvoiceNumber(invoiceNumber: string) {

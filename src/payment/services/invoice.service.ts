@@ -168,6 +168,44 @@ export class InvoiceService {
     return newInv;
   }
 
+  async generateEmptyInvoiceByTermId(
+    studentNumber: string,
+    termId: number,
+  ): Promise<InvoiceEntity> {
+    const student = await this.resourceById.getStudentByStudentNumber(
+      studentNumber,
+    );
+
+    const enrol = await this.enrolmentService.getOneEnrolmentByTermId(
+      studentNumber,
+      termId,
+    );
+
+    if (!enrol) {
+      throw new NotImplementedException(
+        `Student ${studentNumber} not enrolled in termId ${termId}`,
+      );
+    }
+
+    const newInv = this.invoiceRepository.create();
+    newInv.student = student;
+    newInv.enrol = enrol;
+    newInv.bills = [];
+    newInv.invoiceNumber = await this.generateInvoiceNumber();
+    newInv.invoiceDate = new Date();
+    const dueDate = new Date();
+    dueDate.setDate(dueDate.getDate() + 30);
+    newInv.invoiceDueDate = dueDate;
+    newInv.totalBill = 0;
+    newInv.balance = 0;
+    newInv.amountPaidOnInvoice = 0;
+    newInv.status = InvoiceStatus.Pending;
+    newInv.exemptedAmount = 0;
+    newInv.isVoided = false;
+
+    return newInv;
+  }
+
   async saveInvoice(
     invoice: CreateInvoiceDto,
     performedBy?: string,
@@ -1396,6 +1434,86 @@ export class InvoiceService {
       };
     }
     
+    return response;
+  }
+
+  async getInvoiceByTermId(
+    studentNumber: string,
+    termId: number,
+    includeVoided: boolean = false,
+  ): Promise<InvoiceResponseDto> {
+    const relations: (keyof InvoiceEntity | string)[] = [
+      'student',
+      'enrol',
+      'bills',
+      'bills.fees',
+      'exemption',
+    ];
+
+    const baseWhere = {
+      student: { studentNumber },
+      enrol: { termId },
+    };
+
+    const activeInvoice = await this.invoiceRepository
+      .createQueryBuilder('invoice')
+      .leftJoinAndSelect('invoice.student', 'student')
+      .leftJoinAndSelect('invoice.enrol', 'enrol')
+      .leftJoinAndSelect('invoice.bills', 'bills')
+      .leftJoinAndSelect('bills.fees', 'fees')
+      .leftJoinAndSelect('invoice.exemption', 'exemption')
+      .where('student.studentNumber = :studentNumber', { studentNumber })
+      .andWhere('enrol.termId = :termId', { termId })
+      .andWhere('(invoice.isVoided = false OR invoice.isVoided IS NULL)')
+      .getOne();
+
+    if (activeInvoice) {
+      const voidedInvoice = await this.invoiceRepository.findOne({
+        where: { ...baseWhere, isVoided: true },
+        select: ['id', 'invoiceNumber', 'voidedAt', 'voidedBy'],
+      });
+
+      const response: InvoiceResponseDto = { invoice: activeInvoice };
+      if (voidedInvoice) {
+        response.warning = {
+          message: `A voided invoice (${voidedInvoice.invoiceNumber}) exists for this student and term.`,
+          voidedInvoiceNumber: voidedInvoice.invoiceNumber,
+          voidedAt: voidedInvoice.voidedAt,
+          voidedBy: voidedInvoice.voidedBy,
+        };
+      }
+      return response;
+    }
+
+    if (includeVoided) {
+      const voidedInvoice = await this.invoiceRepository.findOne({
+        where: { ...baseWhere, isVoided: true },
+        relations,
+      });
+      if (voidedInvoice) {
+        return { invoice: voidedInvoice };
+      }
+    }
+
+    const emptyInvoice = await this.generateEmptyInvoiceByTermId(
+      studentNumber,
+      termId,
+    );
+
+    const voidedInvoice = await this.invoiceRepository.findOne({
+      where: { ...baseWhere, isVoided: true },
+      select: ['id', 'invoiceNumber', 'voidedAt', 'voidedBy'],
+    });
+
+    const response: InvoiceResponseDto = { invoice: emptyInvoice };
+    if (voidedInvoice) {
+      response.warning = {
+        message: `A voided invoice (${voidedInvoice.invoiceNumber}) exists for this student and term. A new invoice has been generated.`,
+        voidedInvoiceNumber: voidedInvoice.invoiceNumber,
+        voidedAt: voidedInvoice.voidedAt,
+        voidedBy: voidedInvoice.voidedBy,
+      };
+    }
     return response;
   }
 
