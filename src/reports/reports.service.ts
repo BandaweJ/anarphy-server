@@ -1094,9 +1094,9 @@ export class ReportsService {
       // const yStartPosition = 202.598;
       // const yGap = 28.3465;
       const columnWidth = 28.3465; //28.3465; //10mm per column
-      const rowHeight = 28.3465; //100mm per row
-      const padding = 9; //2.46944 mm of padding
-      const smallPadding = 5; // 1.76389 mm of padding
+      const rowHeight = 22; // compact row height for web-like density
+      const padding = 6;
+      const smallPadding = 4;
 
       //Document Colors
       const blueColor = '#27aae1';
@@ -1105,7 +1105,7 @@ export class ReportsService {
       const redAccentColor = '#ff4a95';
 
       //default fontSize
-      const defaultFontSize = 14;
+      const defaultFontSize = 11;
 
       const title = `${report.report.name} ${report.report.surname} Term ${report.report.termNumber} - ${report.report.className}`;
 
@@ -1122,22 +1122,40 @@ export class ReportsService {
 
       try {
         const settings = await this.systemSettingsService.getSettings();
-        const configuredLetterhead = settings?.reportLetterheadPath || settings?.schoolLogo;
-        const fallbackLetterhead = path.join(__dirname, '../../public/report-letterhead.png');
-        const legacyFallback = path.join(__dirname, '../../public/banner.jpeg');
-        const selectedPath =
-          configuredLetterhead && fs.existsSync(configuredLetterhead)
-            ? configuredLetterhead
-            : fs.existsSync(fallbackLetterhead)
-              ? fallbackLetterhead
-              : legacyFallback;
-        const imgBuffer = fs.readFileSync(selectedPath);
+        const configuredLetterhead =
+          settings?.reportLetterheadPath || settings?.schoolLogo;
+        const projectRoot = process.cwd();
+        const candidates = [
+          // Explicit configured path (absolute)
+          configuredLetterhead,
+          // Configured path treated as project-relative (e.g. "assets/...", "public/...")
+          configuredLetterhead
+            ? path.resolve(projectRoot, configuredLetterhead)
+            : undefined,
+          // Common production/runtime locations
+          path.resolve(projectRoot, 'public', 'report-letterhead.png'),
+          path.resolve(projectRoot, 'public', 'anarphy_logo.png'),
+          path.resolve(projectRoot, 'public', 'banner.jpeg'),
+          // Dist fallback (in case assets were copied into dist)
+          path.resolve(__dirname, '../../public/report-letterhead.png'),
+          path.resolve(__dirname, '../../public/anarphy_logo.png'),
+          path.resolve(__dirname, '../../public/banner.jpeg'),
+        ].filter((p): p is string => !!p);
 
-        doc.image(imgBuffer, margin, padding, {
-          width: columnWidth * 18,
-          height: rowHeight * 3,
-          align: 'center',
-        });
+        const selectedPath = candidates.find((candidate) =>
+          fs.existsSync(candidate),
+        );
+
+        if (selectedPath) {
+          const imgBuffer = fs.readFileSync(selectedPath);
+          doc.image(imgBuffer, margin, padding, {
+            width: columnWidth * 18,
+            height: rowHeight * 3,
+            align: 'center',
+          });
+        } else {
+          console.log('No valid report letterhead image found in candidates');
+        }
       } catch (err) {
         console.log('Failed to add letterhead image: ', err);
       }
@@ -1155,8 +1173,8 @@ export class ReportsService {
       const heading = `${report.examType} ${report.report.termNumber}, ${report.report.termYear} Report Card`;
       doc
         .fillColor(blackColor)
-        .fontSize(defaultFontSize + 10)
-        .font('Times-Bold')
+        .fontSize(defaultFontSize + 6)
+        .font('Helvetica-Bold')
         .text(heading, margin, rowHeight * 4, {
           width: columnWidth * 18,
           align: 'center',
@@ -1174,7 +1192,7 @@ export class ReportsService {
       //student number
       doc
         .fontSize(defaultFontSize)
-        .font('Times-Roman')
+        .font('Helvetica')
         .text('Student I.D: ', margin, rowHeight * 5 + padding, {
           width: columnWidth * 6,
           align: 'left',
@@ -1255,7 +1273,7 @@ export class ReportsService {
 
       //start table — header height fits wrapped labels; body rows expand for long comments
       const tableTop = rowHeight * 7;
-      doc.font('Times-Roman').fontSize(defaultFontSize - 1);
+      doc.font('Helvetica').fontSize(defaultFontSize - 1);
       const narrowHdrW = columnWidth * 1.5 - smallPadding;
       const commentHdrW = columnWidth * 4.5 - smallPadding * 2;
       const headerCellHeights = [
@@ -1265,8 +1283,8 @@ export class ReportsService {
         }),
         doc.heightOfString('Exam Mark', { width: narrowHdrW }),
         doc.heightOfString('Term Mark', { width: narrowHdrW }),
-        doc.heightOfString('Average', { width: narrowHdrW }),
-        doc.heightOfString('Subject Position', { width: narrowHdrW }),
+        doc.heightOfString('Avg', { width: narrowHdrW }),
+        doc.heightOfString('Pos', { width: narrowHdrW }),
         doc.heightOfString('Grade', { width: narrowHdrW }),
         doc.heightOfString("Teacher's Comment", { width: commentHdrW }),
       ];
@@ -1312,7 +1330,7 @@ export class ReportsService {
         columnWidth * 1.5,
         headerRowH,
       ).stroke();
-      doc.text('Average', margin + columnWidth * 9 + smallPadding, tableTop + padding, {
+      doc.text('Avg', margin + columnWidth * 9 + smallPadding, tableTop + padding, {
         width: narrowHdrW,
       });
       doc.rect(
@@ -1322,7 +1340,7 @@ export class ReportsService {
         headerRowH,
       ).stroke();
       doc.text(
-        'Subject Position',
+        'Pos',
         margin + columnWidth * 10.5 + smallPadding,
         tableTop + padding,
         { width: narrowHdrW },
@@ -1353,11 +1371,57 @@ export class ReportsService {
       const commentColW = columnWidth * 4.5 - smallPadding * 2;
       doc.fontSize(defaultFontSize - 3);
       let rowY = tableTop + headerRowH;
+      const clampToLines = (
+        text: string,
+        width: number,
+        maxLines: number,
+      ): string => {
+        if (!text) return '';
+        const words = text.split(/\s+/).filter(Boolean);
+        const lines: string[] = [];
+        let current = '';
+
+        for (const word of words) {
+          const next = current ? `${current} ${word}` : word;
+          if (doc.widthOfString(next) <= width) {
+            current = next;
+            continue;
+          }
+
+          if (current) lines.push(current);
+          current = word;
+          if (lines.length >= maxLines) break;
+        }
+        if (current && lines.length < maxLines) lines.push(current);
+
+        if (lines.length > maxLines) lines.length = maxLines;
+        if (words.length && lines.length === maxLines) {
+          const original = text.trim();
+          const rebuilt = lines.join(' ').trim();
+          if (rebuilt.length < original.length) {
+            let last = lines[maxLines - 1];
+            while (last.length > 0 && doc.widthOfString(`${last}...`) > width) {
+              last = last.slice(0, -1);
+            }
+            lines[maxLines - 1] = `${last}...`;
+          }
+        }
+
+        return lines.join('\n');
+      };
 
       for (let i = 0; i < report.report.subjectsTable.length; i++) {
         const subj = report.report.subjectsTable[i];
-        const subjectText = `${subj.subjectCode} ${subj.subjectName}`;
-        const commentText = subj.comment != null ? String(subj.comment) : '';
+        const subjectText = clampToLines(
+          `${subj.subjectCode} ${subj.subjectName}`,
+          subjectColW,
+          2,
+        );
+        const commentText = clampToLines(
+          subj.comment != null ? String(subj.comment) : '',
+          commentColW,
+          2,
+        );
 
         const subjectH = doc.heightOfString(subjectText, { width: subjectColW });
         const commentH = doc.heightOfString(commentText, { width: commentColW });
@@ -1517,7 +1581,7 @@ export class ReportsService {
         );
 
       const yAfterTable = averageRowY + rowHeight;
-      const footerGap = 20;
+      const footerGap = 10;
       const footerLabelY = yAfterTable + footerGap;
       const footerBoxY = footerLabelY + rowHeight;
       const ftBoxW = columnWidth * 8 - smallPadding * 2;
@@ -1527,7 +1591,7 @@ export class ReportsService {
         : '';
       doc.fontSize(defaultFontSize - 2);
       const dualCommentBoxH = Math.max(
-        rowHeight * 2,
+        rowHeight * 1.6,
         doc.heightOfString(ftTextRaw, { width: ftBoxW }) + padding * 2,
         doc.heightOfString(headTextRaw, { width: ftBoxW }) + padding * 2,
       );
