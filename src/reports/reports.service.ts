@@ -1097,7 +1097,6 @@ export class ReportsService {
       const rowHeight = 28.3465; //100mm per row
       const padding = 9; //2.46944 mm of padding
       const smallPadding = 5; // 1.76389 mm of padding
-      let averageMarkRowNumber = 0;
 
       //Document Colors
       const blueColor = '#27aae1';
@@ -1248,230 +1247,203 @@ export class ReportsService {
       doc
         .fillColor(blackColor)
         .fontSize(defaultFontSize - 2)
-        .text('Next Term Opening Day: ', margin, rowHeight * 6 + 12, {
+        .text('Next Term Begins: ', margin, rowHeight * 6 + 12, {
           continued: true,
         })
         .fillColor(blueColor)
         .text(openingDayText);
 
-      //start table
+      //start table — header height fits wrapped labels; body rows expand for long comments
+      const tableTop = rowHeight * 7;
+      doc.font('Times-Roman').fontSize(defaultFontSize - 1);
+      const narrowHdrW = columnWidth * 1.5 - smallPadding;
+      const commentHdrW = columnWidth * 4.5 - smallPadding * 2;
+      const headerCellHeights = [
+        doc.heightOfString('#', { width: columnWidth - smallPadding }),
+        doc.heightOfString('Subject', {
+          width: columnWidth * 5 - smallPadding * 2,
+        }),
+        doc.heightOfString('Exam Mark', { width: narrowHdrW }),
+        doc.heightOfString('Term Mark', { width: narrowHdrW }),
+        doc.heightOfString('Average', { width: narrowHdrW }),
+        doc.heightOfString('Subject Position', { width: narrowHdrW }),
+        doc.heightOfString('Grade', { width: narrowHdrW }),
+        doc.heightOfString("Teacher's Comment", { width: commentHdrW }),
+      ];
+      const headerRowH = Math.max(
+        rowHeight,
+        Math.max(...headerCellHeights) + padding * 2,
+      );
 
-      //table headers
-      doc
-        .strokeColor(blueColor)
-        .lineWidth(0.5)
-        .rect(margin, rowHeight * 7, columnWidth, rowHeight)
-        .stroke()
-        .fontSize(defaultFontSize - 1)
-        .text('#', margin + padding, rowHeight * 7 + padding)
-        .rect(margin + columnWidth, rowHeight * 7, columnWidth * 5, rowHeight)
-        .stroke()
-        .text(
-          'Subject',
-          margin + columnWidth + smallPadding,
-          rowHeight * 7 + padding,
-        )
-        .rect(
-          margin + columnWidth * 6,
-          rowHeight * 7,
-          columnWidth * 1.5,
+      doc.strokeColor(blueColor).lineWidth(0.5);
+      doc.rect(margin, tableTop, columnWidth, headerRowH).stroke();
+      doc.text('#', margin + padding, tableTop + padding);
+      doc.rect(margin + columnWidth, tableTop, columnWidth * 5, headerRowH).stroke();
+      doc.text('Subject', margin + columnWidth + smallPadding, tableTop + padding, {
+        width: columnWidth * 5 - smallPadding * 2,
+      });
+      doc.rect(
+        margin + columnWidth * 6,
+        tableTop,
+        columnWidth * 1.5,
+        headerRowH,
+      ).stroke();
+      doc.text(
+        'Exam Mark',
+        margin + columnWidth * 6 + smallPadding,
+        tableTop + padding,
+        { width: narrowHdrW },
+      );
+      doc.rect(
+        margin + columnWidth * 7 + columnWidth * 0.5,
+        tableTop,
+        columnWidth * 1.5,
+        headerRowH,
+      ).stroke();
+      doc.text(
+        'Term Mark',
+        margin + columnWidth * 7 + columnWidth * 0.5 + smallPadding,
+        tableTop + padding,
+        { width: narrowHdrW },
+      );
+      doc.rect(
+        margin + columnWidth * 9,
+        tableTop,
+        columnWidth * 1.5,
+        headerRowH,
+      ).stroke();
+      doc.text('Average', margin + columnWidth * 9 + smallPadding, tableTop + padding, {
+        width: narrowHdrW,
+      });
+      doc.rect(
+        margin + columnWidth * 10.5,
+        tableTop,
+        columnWidth * 1.5,
+        headerRowH,
+      ).stroke();
+      doc.text(
+        'Subject Position',
+        margin + columnWidth * 10.5 + smallPadding,
+        tableTop + padding,
+        { width: narrowHdrW },
+      );
+      doc.rect(
+        margin + columnWidth * 12,
+        tableTop,
+        columnWidth * 1.5,
+        headerRowH,
+      ).stroke();
+      doc.text('Grade', margin + columnWidth * 12 + smallPadding, tableTop + padding, {
+        width: narrowHdrW,
+      });
+      doc.rect(
+        margin + columnWidth * 13.5,
+        tableTop,
+        columnWidth * 4.5,
+        headerRowH,
+      ).stroke();
+      doc.text(
+        "Teacher's Comment",
+        margin + columnWidth * 13.5 + smallPadding,
+        tableTop + padding,
+        { width: commentHdrW },
+      );
+
+      const subjectColW = columnWidth * 5 - smallPadding * 2;
+      const commentColW = columnWidth * 4.5 - smallPadding * 2;
+      doc.fontSize(defaultFontSize - 3);
+      let rowY = tableTop + headerRowH;
+
+      for (let i = 0; i < report.report.subjectsTable.length; i++) {
+        const subj = report.report.subjectsTable[i];
+        const subjectText = `${subj.subjectCode} ${subj.subjectName}`;
+        const commentText = subj.comment != null ? String(subj.comment) : '';
+
+        const subjectH = doc.heightOfString(subjectText, { width: subjectColW });
+        const commentH = doc.heightOfString(commentText, { width: commentColW });
+        const rowH = Math.max(
           rowHeight,
-        )
-        .stroke()
-        .text(
-          'Mark',
-          margin + columnWidth * 6 + smallPadding,
-          rowHeight * 7 + padding,
-        )
-        .rect(
-          margin + columnWidth * 7 + columnWidth * 0.5,
-          rowHeight * 7,
-          columnWidth * 1.5,
-          rowHeight,
-        )
-        .stroke()
-        .text(
-          'Term',
-          margin + columnWidth * 7 + columnWidth * 0.5 + smallPadding,
-          rowHeight * 7 + padding,
-        )
-        .rect(
-          margin + columnWidth * 9,
-          rowHeight * 7,
-          columnWidth * 1.5,
-          rowHeight,
-        )
-        .stroke()
-        .text(
-          'Mean',
-          margin + columnWidth * 9 + smallPadding,
-          rowHeight * 7 + padding,
-        )
-        .rect(
-          margin + columnWidth * 10.5,
-          rowHeight * 7,
-          columnWidth * 1.5,
-          rowHeight,
-        )
-        .stroke()
-        .text(
-          'Rank',
-          margin + columnWidth * 10.5 + smallPadding,
-          rowHeight * 7 + padding,
-        )
-        .rect(
-          margin + columnWidth * 12,
-          rowHeight * 7,
-          columnWidth * 1.5,
-          rowHeight,
-        )
-        .stroke()
-        .text(
-          'Grade',
-          margin + columnWidth * 12 + smallPadding,
-          rowHeight * 7 + padding,
-        )
-        .rect(
-          margin + columnWidth * 13.5,
-          rowHeight * 7,
-          columnWidth * 4.5,
-          rowHeight,
-        )
-        .stroke()
-        .text(
-          'Comment',
-          margin + columnWidth * 13.5 + smallPadding,
-          rowHeight * 7 + padding,
+          subjectH + padding * 2,
+          commentH + padding * 2,
         );
 
-      //loop through all subjects and construct a row for each
-      for (let i = 0; i < report.report.subjectsTable.length; i++) {
-        //increament averageMarkRow
-        averageMarkRowNumber += 1;
+        doc.strokeColor(blueColor).fillColor(blackColor).lineWidth(0.5);
+        doc.rect(margin, rowY, columnWidth, rowH).stroke();
+        doc.text(`${i + 1}`, margin + padding, rowY + padding);
 
-        //subject row
-        doc
-          .strokeColor(blueColor)
-          .fillColor(blackColor)
-          .lineWidth(0.5)
-          .rect(margin, rowHeight * (7 + i + 1), columnWidth, rowHeight)
-          .stroke()
-          .fontSize(defaultFontSize - 3)
-          .text(`${i + 1}`, margin + padding, rowHeight * (7 + i + 1) + padding)
-          .rect(
-            margin + columnWidth,
-            rowHeight * (7 + i + 1),
-            columnWidth * 5,
-            rowHeight,
-          )
-          .stroke()
-          .text(
-            `${report.report.subjectsTable[i].subjectCode} ${report.report.subjectsTable[i].subjectName}`,
-            margin + columnWidth + smallPadding,
-            rowHeight * (7 + i + 1) + padding,
-          )
-          .rect(
-            margin + columnWidth * 6,
-            rowHeight * (7 + i + 1),
-            columnWidth * 1.5,
-            rowHeight,
-          )
-          .stroke()
-          .fillColor(
-            report.report.subjectsTable[i].mark >= 60 ? blueColor : redColor,
-          )
-          .text(
-            `${report.report.subjectsTable[i].mark}`,
-            margin + columnWidth * 6 + smallPadding,
-            rowHeight * (7 + i + 1) + padding,
-          )
-          .fillColor(blackColor)
-          .rect(
-            margin + columnWidth * 7 + columnWidth * 0.5,
-            rowHeight * (7 + i + 1),
-            columnWidth * 1.5,
-            rowHeight,
-          )
-          .stroke()
-          .text(
-            `${report.report.subjectsTable[i].termMark ?? ''}`,
-            margin + columnWidth * 7 + columnWidth * 0.5 + smallPadding,
-            rowHeight * (7 + i + 1) + padding,
-          )
-          .rect(
-            margin + columnWidth * 9,
-            rowHeight * (7 + i + 1),
-            columnWidth * 1.5,
-            rowHeight,
-          )
-          .stroke()
-          .text(
-            `${Math.round(report.report.subjectsTable[i].averageMark)}`,
-            margin + columnWidth * 9 + smallPadding,
-            rowHeight * (7 + i + 1) + padding,
-          )
-          .rect(
-            margin + columnWidth * 10.5,
-            rowHeight * (7 + i + 1),
-            columnWidth * 1.5,
-            rowHeight,
-          )
-          .stroke()
-          .text(
-            `${report.report.subjectsTable[i].position}`,
-            // margin + columnWidth * 10.5 + smallPadding,
-            margin + columnWidth * 10.5 + padding,
+        doc.rect(margin + columnWidth, rowY, columnWidth * 5, rowH).stroke();
+        doc.text(subjectText, margin + columnWidth + smallPadding, rowY + padding, {
+          width: subjectColW,
+        });
 
-            rowHeight * (7 + i + 1) + padding,
-          )
-          .rect(
-            margin + columnWidth * 12,
-            rowHeight * (7 + i + 1),
-            columnWidth * 1.5,
-            rowHeight,
-          )
-          .stroke()
-          .text(
-            `${report.report.subjectsTable[i].grade}`,
-            margin + columnWidth * 12 + padding,
-            rowHeight * (7 + i + 1) + padding,
-          )
-          .rect(
-            margin + columnWidth * 13.5,
-            rowHeight * (7 + i + 1),
-            columnWidth * 4.5,
-            rowHeight,
-          )
-          .stroke()
-          .text(
-            `${report.report.subjectsTable[i].comment}`,
-            margin + columnWidth * 13.5 + smallPadding,
-            rowHeight * (7 + i + 1) + smallPadding,
-          );
+        doc.rect(margin + columnWidth * 6, rowY, columnWidth * 1.5, rowH).stroke();
+        doc.fillColor(subj.mark >= 60 ? blueColor : redColor);
+        doc.text(
+          `${subj.mark}`,
+          margin + columnWidth * 6 + smallPadding,
+          rowY + padding,
+        );
+        doc.fillColor(blackColor);
+
+        doc.rect(
+          margin + columnWidth * 7 + columnWidth * 0.5,
+          rowY,
+          columnWidth * 1.5,
+          rowH,
+        ).stroke();
+        doc.text(
+          `${subj.termMark ?? ''}`,
+          margin + columnWidth * 7 + columnWidth * 0.5 + smallPadding,
+          rowY + padding,
+        );
+
+        doc.rect(margin + columnWidth * 9, rowY, columnWidth * 1.5, rowH).stroke();
+        doc.text(
+          `${Math.round(subj.averageMark)}`,
+          margin + columnWidth * 9 + smallPadding,
+          rowY + padding,
+        );
+
+        doc.rect(margin + columnWidth * 10.5, rowY, columnWidth * 1.5, rowH).stroke();
+        doc.text(
+          `${subj.position}`,
+          margin + columnWidth * 10.5 + padding,
+          rowY + padding,
+        );
+
+        doc.rect(margin + columnWidth * 12, rowY, columnWidth * 1.5, rowH).stroke();
+        doc.text(
+          `${subj.grade}`,
+          margin + columnWidth * 12 + padding,
+          rowY + padding,
+        );
+
+        doc.rect(margin + columnWidth * 13.5, rowY, columnWidth * 4.5, rowH).stroke();
+        doc.text(
+          commentText,
+          margin + columnWidth * 13.5 + smallPadding,
+          rowY + smallPadding,
+          { width: commentColW },
+        );
+
+        rowY += rowH;
       }
+
+      const averageRowY = rowY;
 
       //Average Mark row
       doc
         .strokeColor(blueColor)
         .fillColor(blackColor)
         .lineWidth(0.5)
-        .rect(
-          margin,
-          rowHeight * (7 + averageMarkRowNumber + 1),
-          columnWidth * 6,
-          rowHeight,
-        )
+        .rect(margin, averageRowY, columnWidth * 6, rowHeight)
         .stroke()
         .fontSize(defaultFontSize - 3)
-        .text(
-          `Average Mark`,
-          margin + padding,
-          rowHeight * (7 + averageMarkRowNumber + 1) + padding,
-        )
+        .text(`Average Mark`, margin + padding, averageRowY + padding)
 
         .rect(
           margin + columnWidth * 6,
-          rowHeight * (7 + averageMarkRowNumber + 1),
+          averageRowY,
           columnWidth * 1.5,
           rowHeight,
         )
@@ -1480,12 +1452,12 @@ export class ReportsService {
         .text(
           `${Math.round(report.report.percentageAverge)}`,
           margin + columnWidth * 6 + smallPadding,
-          rowHeight * (7 + averageMarkRowNumber + 1) + padding,
+          averageRowY + padding,
         )
         .fillColor(blackColor)
         .rect(
           margin + columnWidth * 7 + columnWidth * 0.5,
-          rowHeight * (7 + averageMarkRowNumber + 1),
+          averageRowY,
           columnWidth * 1.5,
           rowHeight,
         )
@@ -1493,11 +1465,11 @@ export class ReportsService {
         .text(
           ``,
           margin + columnWidth * 7 + columnWidth * 0.5 + smallPadding,
-          rowHeight * (7 + averageMarkRowNumber + 1) + padding,
+          averageRowY + padding,
         )
         .rect(
           margin + columnWidth * 9,
-          rowHeight * (7 + averageMarkRowNumber + 1),
+          averageRowY,
           columnWidth * 1.5,
           rowHeight,
         )
@@ -1505,11 +1477,11 @@ export class ReportsService {
         .text(
           ``,
           margin + columnWidth * 9 + smallPadding,
-          rowHeight * (7 + averageMarkRowNumber + 1) + padding,
+          averageRowY + padding,
         )
         .rect(
           margin + columnWidth * 10.5,
-          rowHeight * (7 + averageMarkRowNumber + 1),
+          averageRowY,
           columnWidth * 1.5,
           rowHeight,
         )
@@ -1517,11 +1489,11 @@ export class ReportsService {
         .text(
           ``,
           margin + columnWidth * 10.5 + smallPadding,
-          rowHeight * (7 + averageMarkRowNumber + 1) + padding,
+          averageRowY + padding,
         )
         .rect(
           margin + columnWidth * 12,
-          rowHeight * (7 + averageMarkRowNumber + 1),
+          averageRowY,
           columnWidth * 1.5,
           rowHeight,
         )
@@ -1529,11 +1501,11 @@ export class ReportsService {
         .text(
           ``,
           margin + columnWidth * 12 + smallPadding,
-          rowHeight * (7 + averageMarkRowNumber + 1) + padding,
+          averageRowY + padding,
         )
         .rect(
           margin + columnWidth * 13.5,
-          rowHeight * (7 + averageMarkRowNumber + 1),
+          averageRowY,
           columnWidth * 4.5,
           rowHeight,
         )
@@ -1541,37 +1513,51 @@ export class ReportsService {
         .text(
           ``,
           margin + columnWidth * 13.5 + smallPadding,
-          rowHeight * (7 + averageMarkRowNumber + 1) + padding,
+          averageRowY + padding,
         );
+
+      const yAfterTable = averageRowY + rowHeight;
+      const footerGap = 20;
+      const footerLabelY = yAfterTable + footerGap;
+      const footerBoxY = footerLabelY + rowHeight;
+      const ftBoxW = columnWidth * 8 - smallPadding * 2;
+      const ftTextRaw = report.report.classTrComment || '';
+      const headTextRaw = report.report.headComment
+        ? `${report.report.headComment}`
+        : '';
+      doc.fontSize(defaultFontSize - 2);
+      const dualCommentBoxH = Math.max(
+        rowHeight * 2,
+        doc.heightOfString(ftTextRaw, { width: ftBoxW }) + padding * 2,
+        doc.heightOfString(headTextRaw, { width: ftBoxW }) + padding * 2,
+      );
 
       //Teacher's Comment
       doc
-        .fontSize(defaultFontSize - 2)
-        .text('Form Teacher', margin, rowHeight * 24 + padding, {
+        .text('Form Teacher', margin, footerLabelY, {
           align: 'center',
           width: columnWidth * 8,
           height: rowHeight,
         })
-        .rect(margin, rowHeight * 25, columnWidth * 8, rowHeight * 2)
+        .rect(margin, footerBoxY, columnWidth * 8, dualCommentBoxH)
         .stroke()
         .text(
           `${report.report.classTrComment}`,
           margin + smallPadding,
-          rowHeight * 25 + padding,
+          footerBoxY + padding,
           {
-            width: columnWidth * 8,
-            height: rowHeight * 2,
+            width: columnWidth * 8 - smallPadding * 2,
+            height: dualCommentBoxH - padding * 2,
             align: 'left',
           },
         );
 
       //Head's Comment
       doc
-        .fontSize(defaultFontSize - 2)
         .text(
           "Head's Comment",
           margin + columnWidth * 10,
-          rowHeight * 24 + padding,
+          footerLabelY,
           {
             align: 'center',
             width: columnWidth * 8,
@@ -1580,18 +1566,18 @@ export class ReportsService {
         )
         .rect(
           margin + columnWidth * 10,
-          rowHeight * 25,
+          footerBoxY,
           columnWidth * 8,
-          rowHeight * 2,
+          dualCommentBoxH,
         )
         .stroke()
         .text(
           report.report.headComment ? `${report.report.headComment}` : '',
           margin + columnWidth * 10 + smallPadding,
-          rowHeight * 25 + padding,
+          footerBoxY + padding,
           {
-            width: columnWidth * 8,
-            height: rowHeight * 2,
+            width: columnWidth * 8 - smallPadding * 2,
+            height: dualCommentBoxH - padding * 2,
             align: 'left',
           },
         );
@@ -1608,13 +1594,14 @@ export class ReportsService {
       const activities = report.report.extraCurricularActivities || [];
       if (activities.length > 0) {
         const activityText = activities.map((a) => `- ${a}`).join('\n');
+        const activitiesY = footerBoxY + dualCommentBoxH + 12;
         doc
           .fillColor(blackColor)
           .fontSize(defaultFontSize - 3)
           .text(
             `Extra Curricular Activities:\n${activityText}`,
             margin,
-            rowHeight * 27 + 8,
+            activitiesY,
             {
               width: columnWidth * 18,
               align: 'left',
