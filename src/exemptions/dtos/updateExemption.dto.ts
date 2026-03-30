@@ -1,9 +1,10 @@
 /* eslint-disable prettier/prettier */
-import { IsNotEmpty, IsNumber, IsOptional, IsString, IsBoolean } from 'class-validator';
+import { IsBoolean, IsEnum, IsNumber, IsOptional, IsString } from 'class-validator';
 import { ExemptionType } from '../enums/exemptions-type.enum';
 
 export class UpdateExemptionDto {
-  @IsNotEmpty()
+  @IsOptional()
+  @IsEnum(ExemptionType)
   type?: ExemptionType;
 
   @IsNumber()
