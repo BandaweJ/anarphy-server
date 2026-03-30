@@ -1655,24 +1655,6 @@ export class ReportsService {
         .lineTo(0, 0)
         .stroke();
 
-      const activities = report.report.extraCurricularActivities || [];
-      if (activities.length > 0) {
-        const activityText = activities.map((a) => `- ${a}`).join('\n');
-        const activitiesY = footerBoxY + dualCommentBoxH + 12;
-        doc
-          .fillColor(blackColor)
-          .fontSize(defaultFontSize - 3)
-          .text(
-            `Extra Curricular Activities:\n${activityText}`,
-            margin,
-            activitiesY,
-            {
-              width: columnWidth * 18,
-              align: 'left',
-            },
-          );
-      }
-
       doc.end();
 
       const buffer = [];
