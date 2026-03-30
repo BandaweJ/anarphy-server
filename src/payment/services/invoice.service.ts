@@ -329,6 +329,10 @@ export class InvoiceService {
           // Reconciliation is designed to be idempotent and ledger-consistent.
 
           const studentExemption = student.exemption;
+          const activeStudentExemption =
+            studentExemption && studentExemption.isActive
+              ? studentExemption
+              : null;
           let bills: BillsEntity[] = [];
 
           bills =
@@ -393,7 +397,7 @@ export class InvoiceService {
 
           const calculatedNetTotalBill = this.calculateNetBillAmount(
             bills,
-            studentExemption,
+            activeStudentExemption,
           );
 
           const existingInvoices = await transactionalEntityManager.find(
@@ -483,7 +487,8 @@ export class InvoiceService {
 
             // Don't manually set amountPaidOnInvoice - it will be recalculated from allocations
             // by verifyAndRecalculateInvoiceBalance after saving
-            invoiceToSave.exemption = studentExemption || null;
+            // If exemption is inactive at edit time, remove it from this invoice.
+            invoiceToSave.exemption = activeStudentExemption;
             // For existing invoices, we need to recalculate balance after updating totalBill
             // Reload invoice with allocations to get accurate balance calculation
             const invoiceWithAllocations = await transactionalEntityManager.findOne(
@@ -538,7 +543,7 @@ export class InvoiceService {
 
             this.updateInvoiceBalance(invoiceToSave);
             this.verifyInvoiceBalance(invoiceToSave);
-            invoiceToSave.exemption = studentExemption || null;
+            invoiceToSave.exemption = activeStudentExemption;
             invoiceToSave.status = this.getInvoiceStatus(invoiceToSave);
           }
 
