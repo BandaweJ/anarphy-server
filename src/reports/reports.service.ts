@@ -1122,8 +1122,7 @@ export class ReportsService {
 
       try {
         const settings = await this.systemSettingsService.getSettings();
-        const configuredLetterhead =
-          settings?.reportLetterheadPath || settings?.schoolLogo;
+        const configuredLetterhead = settings?.reportLetterheadPath;
         const projectRoot = process.cwd();
         const candidates = [
           // Explicit configured path (absolute)
@@ -1134,12 +1133,8 @@ export class ReportsService {
             : undefined,
           // Common production/runtime locations
           path.resolve(projectRoot, 'public', 'report-letterhead.png'),
-          path.resolve(projectRoot, 'public', 'anarphy_logo.png'),
-          path.resolve(projectRoot, 'public', 'banner.jpeg'),
           // Dist fallback (in case assets were copied into dist)
           path.resolve(__dirname, '../../public/report-letterhead.png'),
-          path.resolve(__dirname, '../../public/anarphy_logo.png'),
-          path.resolve(__dirname, '../../public/banner.jpeg'),
         ].filter((p): p is string => !!p);
 
         const selectedPath = candidates.find((candidate) =>
