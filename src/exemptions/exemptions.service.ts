@@ -111,8 +111,12 @@ export class ExemptionService {
 
     const savedExemption = await this.exemptionRepository.save(exemption);
 
-    // Apply the exemption to any existing invoices for this student
-    await this.paymentService.applyExemptionToExistingInvoices(studentNumber);
+    // Apply the exemption only when active.
+    // If the exemption is deactivated, old invoices must keep their previously
+    // calculated net amounts (gross - exemptions at the time of invoice creation).
+    if (savedExemption.isActive) {
+      await this.paymentService.applyExemptionToExistingInvoices(studentNumber);
+    }
 
     return savedExemption;
   }
@@ -252,10 +256,13 @@ export class ExemptionService {
 
     const updatedExemption = await this.exemptionRepository.save(exemption);
 
-    // Apply the exemption to any existing invoices for this student
-    await this.paymentService.applyExemptionToExistingInvoices(
-      exemption.student.studentNumber,
-    );
+    // Apply the exemption only when active.
+    // Deactivated exemptions must not be retroactively removed from old invoices.
+    if (updatedExemption.isActive) {
+      await this.paymentService.applyExemptionToExistingInvoices(
+        exemption.student.studentNumber,
+      );
+    }
 
     return updatedExemption;
   }

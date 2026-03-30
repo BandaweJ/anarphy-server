@@ -111,7 +111,11 @@ export class InvoiceService {
     invoice.enrol = enrol;
     invoice.bills = bills;
     invoice.exemption = studentExemption || null;
-    invoice.exemptedAmount = this._calculateExemptionAmount(invoice);
+    // Exemptions should only be shown/valued when the exemption is active.
+    // Old invoices keep their stored exemptedAmount; this is only for a freshly generated statement.
+    invoice.exemptedAmount = invoice.exemption?.isActive
+      ? this._calculateExemptionAmount(invoice)
+      : 0;
     invoice.amountPaidOnInvoice = payments.reduce(
       (sum, payment) => sum + Number(payment.amountPaid),
       0,
@@ -538,9 +542,11 @@ export class InvoiceService {
             invoiceToSave.status = this.getInvoiceStatus(invoiceToSave);
           }
 
-          invoiceToSave.exemptedAmount = this._calculateExemptionAmount(
-            invoiceToSave,
-          );
+          // Exempted amount is persisted for reporting/PDF.
+          // When an exemption is deactivated, it must stop affecting future invoices.
+          invoiceToSave.exemptedAmount = invoiceToSave.exemption?.isActive
+            ? this._calculateExemptionAmount(invoiceToSave)
+            : 0;
           this.financialValidationService.validateInvoiceBeforeSave(
             invoiceToSave,
           );
@@ -2113,8 +2119,9 @@ export class InvoiceService {
     const items = [...(invoiceData.bills || [])];
 
     if (invoiceData.exemption) {
-      const calculatedExemptionAmount =
-        this._calculateExemptionAmount(invoiceData);
+      // Use persisted exemptedAmount so old invoices keep their historical exemption,
+      // while deactivated exemptions don't appear on future invoices.
+      const calculatedExemptionAmount = Number(invoiceData.exemptedAmount || 0);
 
       if (calculatedExemptionAmount > 0) {
         const exemptionFees: FeesEntity = {
@@ -2969,11 +2976,12 @@ export class InvoiceService {
 
     // --- Reset invoice financial fields (recalculate net totals) ---
     for (const invoice of invoices) {
-      const netTotal = this.calculateNetBillAmount(
-        invoice.bills || [],
-        (invoice.exemption as any) || null,
-      );
-      invoice.exemptedAmount = this._calculateExemptionAmount(invoice);
+      // IMPORTANT:
+      // Exemption deactivation must NOT retroactively change already-issued invoices.
+      // Therefore, keep persisted totals/exemptedAmount and only rebuild derived records
+      // (allocations, balances, credit ledger) below.
+      const netTotal = Number(invoice.totalBill || 0);
+      invoice.exemptedAmount = Number(invoice.exemptedAmount || 0);
       invoice.totalBill = netTotal;
       invoice.amountPaidOnInvoice = 0;
       invoice.balance = netTotal;
