@@ -1124,34 +1124,37 @@ export class ReportsService {
         const settings = await this.systemSettingsService.getSettings();
         const configuredLetterhead = settings?.reportLetterheadPath;
         const projectRoot = process.cwd();
+        const webLetterheadCandidates = [
+          path.resolve(
+            projectRoot,
+            '../anarphy-front/src/assets/report-letterhead.png',
+          ),
+          path.resolve(
+            projectRoot,
+            '../anarphy-front/src/assets/report-letterhead.jpg',
+          ),
+          path.resolve(
+            projectRoot,
+            '../anarphy-front/src/assets/report-letterhead.jpeg',
+          ),
+        ];
         const candidates = [
+          // Always prefer the same letterhead used by the web report UI.
+          ...webLetterheadCandidates,
           // Explicit configured path (absolute)
           configuredLetterhead,
           // Configured path treated as project-relative (e.g. "assets/...", "public/...")
           configuredLetterhead
             ? path.resolve(projectRoot, configuredLetterhead)
             : undefined,
-          // Common production/runtime locations (prefer letterhead/banner, never logo)
+          // Common production/runtime locations (letterhead only)
           path.resolve(projectRoot, 'public', 'report-letterhead.png'),
           path.resolve(projectRoot, 'public', 'report-letterhead.jpg'),
           path.resolve(projectRoot, 'public', 'report-letterhead.jpeg'),
-          path.resolve(projectRoot, 'public', 'banner.jpeg'),
-          path.resolve(projectRoot, 'public', 'banner.jpg'),
-          path.resolve(projectRoot, 'public', 'banner.png'),
-          // Monorepo fallback: same image used by web report
-          path.resolve(projectRoot, '../anarphy-front/src/assets/report-letterhead.png'),
-          path.resolve(projectRoot, '../anarphy-front/src/assets/report-letterhead.jpg'),
-          path.resolve(projectRoot, '../anarphy-front/src/assets/report-letterhead.jpeg'),
-          path.resolve(projectRoot, '../anarphy-front/src/assets/banner.jpeg'),
-          path.resolve(projectRoot, '../anarphy-front/src/assets/banner.jpg'),
-          path.resolve(projectRoot, '../anarphy-front/src/assets/banner.png'),
           // Dist fallback (in case assets were copied into dist)
           path.resolve(__dirname, '../../public/report-letterhead.png'),
           path.resolve(__dirname, '../../public/report-letterhead.jpg'),
           path.resolve(__dirname, '../../public/report-letterhead.jpeg'),
-          path.resolve(__dirname, '../../public/banner.jpeg'),
-          path.resolve(__dirname, '../../public/banner.jpg'),
-          path.resolve(__dirname, '../../public/banner.png'),
         ].filter((p): p is string => !!p);
 
         const selectedPath = candidates.find((candidate) =>
